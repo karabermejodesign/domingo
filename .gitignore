@@ -42,3 +42,4 @@ next-env.d.ts
 
 _to_delete/
 .env.local
+tsconfig.tsbuildinfo
