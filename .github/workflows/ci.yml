@@ -1,0 +1,27 @@
+# Tripwire CI: catches "it doesn't build" and "TypeScript is broken" before
+# Vercel does. No tests yet — this is deliberately the cheapest useful net.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      # Dummy values so `next build` never trips on missing env at build time.
+      # Real values live only in Vercel.
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-dummy-anon-key
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run lint
+      - run: npm run build

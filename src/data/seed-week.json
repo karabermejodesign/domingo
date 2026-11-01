@@ -1,0 +1,631 @@
+{
+ "week": {
+  "id": "2026-W45",
+  "label": "Week of 2–8 Nov",
+  "lead": "Saturday. Time to plan the week.",
+  "budget": 130000,
+  "budgetMin": 110000,
+  "pricesChecked": "Lider/Jumbo prices from the 7 Sep check, Aquality from 31 Oct. Lines marked estimate were not verified in cart."
+ },
+ "targets": {
+  "kara": "85–100 g",
+  "tomas": "120–130 g",
+  "kMin": 85,
+  "tMin": 120
+ },
+ "recipient": {
+  "name": "Tomas"
+ },
+ "lastWeek": {
+  "spent": 91300,
+  "avgK": 108,
+  "avgT": 152,
+  "note": "Most swapped: tuna bowl → lentil salad"
+ },
+ "staples": [
+  "Rice",
+  "Lentils",
+  "Oats",
+  "Protein powder",
+  "Olive oil",
+  "Soy sauce",
+  "Spices"
+ ],
+ "pantry": [
+  {
+   "k": "eggs",
+   "t": "Eggs",
+   "s": "~20 left from the 60-pack",
+   "on": true
+  },
+  {
+   "k": "pb",
+   "t": "Peanut butter",
+   "s": "Half jar",
+   "on": true
+  },
+  {
+   "k": "garb",
+   "t": "Garbanzos, dry",
+   "s": "Finished",
+   "on": false
+  },
+  {
+   "k": "pita",
+   "t": "Pan pita integral",
+   "s": "Finished",
+   "on": false
+  },
+  {
+   "k": "yog",
+   "t": "Yogurt griego proteína",
+   "s": "Finished",
+   "on": false
+  },
+  {
+   "k": "frozen",
+   "t": "Frozen veg mix",
+   "s": "1 bag left in freezer",
+   "on": true
+  },
+  {
+   "k": "milk",
+   "t": "Leche descremada",
+   "s": "Finished",
+   "on": false
+  },
+  {
+   "k": "tuna",
+   "t": "Atún lomitos",
+   "s": "Finished",
+   "on": false
+  },
+  {
+   "k": "tahini",
+   "t": "Tahini",
+   "s": "Finished",
+   "on": false
+  }
+ ],
+ "deals": [
+  {
+   "key": "latam",
+   "label": "LATAM Pass benefits",
+   "badge": "Card digits = promo code",
+   "badgeClass": "deal",
+   "items": [
+    {
+     "t": "Juan Esparraguito, 30% off Wednesdays",
+     "s": "Fresh produce · free delivery over $35.000 · Thu–Sun veg moves here",
+     "on": true,
+     "badge": "Wed"
+    },
+    {
+     "t": "Aquality, 40% off Tuesdays",
+     "s": "Frozen fish & seafood · +1 LATAM mile · $3.590 delivery on coupon orders",
+     "on": true,
+     "badge": "Tue"
+    }
+   ]
+  },
+  {
+   "key": "lider",
+   "label": "Lider",
+   "badge": "Checked",
+   "badgeClass": "ok",
+   "items": [
+    {
+     "t": "Pollo Entero Seara 2,2 kg",
+     "s": "Rebaja $7.190, was $8.690 · $3.268/kg",
+     "on": true,
+     "badge": "Rebaja"
+    },
+    {
+     "t": "Garbanzos sin piel Iansa Agro 1 kg",
+     "s": "Rebaja $2.850, was $3.990",
+     "on": true,
+     "badge": "Rebaja"
+    },
+    {
+     "t": "Pan pita integral Castaño ×2",
+     "s": "Combina 2 × $3.000",
+     "on": true,
+     "badge": "Combina"
+    },
+    {
+     "t": "Mantequilla de maní American Classic 510 g",
+     "s": "Rebaja $3.290",
+     "on": false,
+     "badge": "Rebaja"
+    }
+   ]
+  },
+  {
+   "key": "jumbo",
+   "label": "Jumbo",
+   "badge": "Only where it beats Lider",
+   "badgeClass": "est",
+   "items": [
+    {
+     "t": "Primavera Minuto Verde 500 g ×2",
+     "s": "2 × $3.100 · Lider has no 2-pack",
+     "on": true,
+     "badge": "Promo"
+    },
+    {
+     "t": "Lentejas Cuisine & Co 1 kg",
+     "s": "$2.490 vs Lider $2.590 · only if low",
+     "on": false,
+     "badge": ""
+    }
+   ]
+  }
+ ],
+ "meals": {
+  "b": [
+   [
+    "Protein overnight oats",
+    35,
+    485,
+    44,
+    680
+   ],
+   [
+    "Eggs + spinach + pita",
+    25,
+    385,
+    26,
+    435
+   ],
+   [
+    "Greek protein yogurt bowl",
+    27,
+    430,
+    34,
+    535
+   ]
+  ],
+  "l": [
+   [
+    "Chicken-garbanzo salad jar",
+    40,
+    440,
+    53,
+    570
+   ],
+   [
+    "Tuna sesame rice bowl",
+    35,
+    420,
+    44,
+    620
+   ],
+   [
+    "Lentil salad + roasted veg + egg",
+    30,
+    500,
+    42,
+    680
+   ],
+   [
+    "Chicken-hummus pita wrap",
+    39,
+    510,
+    52,
+    635
+   ],
+   [
+    "Tuna-garbanzo Med salad",
+    33,
+    340,
+    40,
+    510
+   ],
+   [
+    "Egg fried rice with peas",
+    30,
+    500,
+    42,
+    700
+   ]
+  ],
+  "d": [
+   [
+    "Air-fryer trutro + roasted veg + tzatziki",
+    50,
+    520,
+    66,
+    680
+   ],
+   [
+    "Chicken egg fried rice",
+    50,
+    665,
+    66,
+    905
+   ],
+   [
+    "Ginger-soy chicken & broccoli + rice",
+    43,
+    550,
+    57,
+    760
+   ],
+   [
+    "Lentejas guisadas + egg",
+    34,
+    600,
+    48,
+    820
+   ],
+   [
+    "Tortilla española + lentil salad",
+    32,
+    550,
+    41,
+    700
+   ],
+   [
+    "Egg-drop chicken soup + rice",
+    41,
+    495,
+    60,
+    745
+   ],
+   [
+    "Air-fryer congrio + roasted veg + tzatziki",
+    40,
+    470,
+    54,
+    630
+   ],
+   [
+    "Teriyaki salmon rice bowl + broccoli",
+    38,
+    610,
+    50,
+    810
+   ]
+  ]
+ },
+ "days": [
+  "Mon",
+  "Tue",
+  "Wed",
+  "Thu",
+  "Fri",
+  "Sat",
+  "Sun"
+ ],
+ "menu": [
+  {
+   "b": 0,
+   "l": 0,
+   "d": 1
+  },
+  {
+   "b": 1,
+   "l": 1,
+   "d": 6
+  },
+  {
+   "b": 0,
+   "l": 2,
+   "d": 0
+  },
+  {
+   "b": 1,
+   "l": 3,
+   "d": 3
+  },
+  {
+   "b": 0,
+   "l": 4,
+   "d": 7
+  },
+  {
+   "b": 2,
+   "l": 5,
+   "d": 5
+  },
+  {
+   "b": 2,
+   "l": 2,
+   "d": 0
+  }
+ ],
+ "stores": [
+  {
+   "key": "lider",
+   "label": "Lider",
+   "day": "Saturday",
+   "sub": "one order",
+   "badge": "",
+   "note": ""
+  },
+  {
+   "key": "jumbo",
+   "label": "Jumbo",
+   "day": "Saturday",
+   "sub": "only where it beats Lider",
+   "badge": "",
+   "note": ""
+  },
+  {
+   "key": "aqua",
+   "label": "Aquality",
+   "day": "Tuesday",
+   "sub": "",
+   "badge": "−40% LATAM Pass",
+   "note": "Frozen fish straight to the freezer. Delivery is $3.590 on coupon orders, so fish gets batched into one order every 3–4 weeks."
+  },
+  {
+   "key": "je",
+   "label": "Juan Esparraguito",
+   "day": "Wednesday",
+   "sub": "",
+   "badge": "−30% LATAM Pass",
+   "note": "Fresh veg for Thu–Sun, ordered Wednesday with the backup cook. Sunday's roast veg stays on Lider so it arrives Saturday."
+  }
+ ],
+ "groceries": {
+  "lider": [
+   {
+    "t": "Pollo Entero Seara 2,2 kg",
+    "q": "1",
+    "p": 7190,
+    "deal": true,
+    "url": "https://super.lider.cl/search?q=pollo%20entero"
+   },
+   {
+    "t": "Trutro Entero Super Pollo, 5 un",
+    "q": "≈2 kg",
+    "p": 7180,
+    "url": "https://super.lider.cl/search?q=trutro%20entero"
+   },
+   {
+    "t": "Huevos Ovofoods mediano, 30 un",
+    "q": "1",
+    "p": 7290,
+    "pk": "eggs",
+    "url": "https://super.lider.cl/search?q=huevos%2030"
+   },
+   {
+    "t": "Atún lomitos agua La Romana",
+    "q": "4",
+    "p": 4000,
+    "pk": "tuna",
+    "url": "https://super.lider.cl/search?q=atun%20lomitos%20agua"
+   },
+   {
+    "t": "Garbanzos sin piel Iansa Agro 1 kg",
+    "q": "1",
+    "p": 2850,
+    "deal": true,
+    "pk": "garb",
+    "url": "https://super.lider.cl/search?q=garbanzos"
+   },
+   {
+    "t": "Yoghurt griego proteína Quillayes 800 g",
+    "q": "1",
+    "p": 4990,
+    "pk": "yog",
+    "url": "https://super.lider.cl/search?q=yoghurt%20griego%20proteina"
+   },
+   {
+    "t": "Yoghurt natural 0% Quillayes 800 g",
+    "q": "2",
+    "p": 8780,
+    "url": "https://super.lider.cl/search?q=yoghurt%20natural%200%25%20quillayes"
+   },
+   {
+    "t": "Leche descremada Lider 1 L",
+    "q": "2",
+    "p": 2000,
+    "pk": "milk",
+    "url": "https://super.lider.cl/search?q=leche%20descremada%201%20l"
+   },
+   {
+    "t": "Pan pita integral Castaño",
+    "q": "2",
+    "p": 3000,
+    "deal": true,
+    "pk": "pita",
+    "url": "https://super.lider.cl/search?q=pan%20pita%20integral"
+   },
+   {
+    "t": "Mantequilla de maní 510 g",
+    "q": "1",
+    "p": 3290,
+    "pk": "pb",
+    "url": "https://super.lider.cl/search?q=pasta%20de%20mani"
+   },
+   {
+    "t": "Brócoli congelado 500 g",
+    "q": "1",
+    "p": 1690,
+    "est": true,
+    "url": "https://super.lider.cl/search?q=brocoli%20congelado"
+   },
+   {
+    "t": "Espinaca congelada 500 g",
+    "q": "1",
+    "p": 2050,
+    "est": true,
+    "url": "https://super.lider.cl/search?q=espinaca%20congelada"
+   },
+   {
+    "t": "Sunday roast veg: cebolla, zanahoria, zapallo, pimentón",
+    "q": "1 kg · 1 kg · 2 · 1",
+    "p": 6330,
+    "est": true,
+    "url": "https://super.lider.cl/search?q=zapallo%20italiano"
+   },
+   {
+    "t": "Limón 1 kg, papa 2 kg, ajo, jengibre",
+    "q": "—",
+    "p": 5280,
+    "est": true,
+    "url": "https://super.lider.cl/search?q=limon"
+   },
+   {
+    "t": "Tahini 300 g",
+    "q": "1",
+    "p": 4290,
+    "est": true,
+    "url": "https://super.lider.cl/search?q=tahini",
+    "pk": "tahini"
+   }
+  ],
+  "jumbo": [
+   {
+    "t": "Primavera Minuto Verde 500 g",
+    "q": "2",
+    "p": 3100,
+    "deal": true,
+    "pk": "frozen",
+    "url": "https://www.jumbo.cl/busqueda?ft=primavera%20minuto%20verde"
+   }
+  ],
+  "aqua": [
+   {
+    "t": "Congrio dorado en trocitos 200 g",
+    "q": "4 · list $7.960",
+    "p": 4776,
+    "deal": true,
+    "url": "https://www.aqualitysoluciones.cl/producto/congrio-dorado-en-trocitos-200-gr/"
+   },
+   {
+    "t": "Salmón Atlántico pedazos y trozos 1 kg",
+    "q": "1 · list $11.990",
+    "p": 7194,
+    "deal": true,
+    "url": "https://www.aqualitysoluciones.cl/producto/salmon-atlantico-pedazos-y-trozos-al-vacio-1-kg-copia/"
+   },
+   {
+    "t": "Delivery, coupon order",
+    "q": "Tue slot",
+    "p": 3590,
+    "url": "https://www.aqualitysoluciones.cl/zona-despacho/"
+   }
+  ],
+  "je": [
+   {
+    "t": "Tomate 1 kg, pepino ×2, lechuga española",
+    "q": "list $5.460",
+    "p": 3822,
+    "deal": true,
+    "url": "https://juanesparraguito.com"
+   },
+   {
+    "t": "Plátano 1,5 kg, manzanas 1 kg",
+    "q": "list $4.400",
+    "p": 3080,
+    "deal": true,
+    "est": true,
+    "url": "https://juanesparraguito.com"
+   }
+  ]
+ },
+ "cook": {
+  "intro": "About 2 hours, one person. Oven and Thermomix run in parallel; the air fryer fills gaps.",
+  "timeline": [
+   {
+    "tm": "0:00",
+    "h": "Oven on, chicken in",
+    "tools": [
+     "oven"
+    ],
+    "p": "Whole chicken (about 4½ lb): pat dry, salt, oil, lemon halves and garlic inside. 390 °F, 75 min."
+   },
+   {
+    "tm": "0:05",
+    "h": "Garbanzos",
+    "tools": [
+     "tmx"
+    ],
+    "p": "Soaked garbanzos (1 lb dry) + 4 cups water + 1 tsp salt. 212 °F · speed 1 reverse · 40 min. Keep the liquid."
+   },
+   {
+    "tm": "0:10",
+    "h": "Trutros, batch 1",
+    "tools": [
+     "af"
+    ],
+    "p": "3 of 5 trutros: salt, paprika, oregano, garlic, oil. 390 °F, 22–25 min, flip at 12. Other 2 stay raw for Wednesday."
+   },
+   {
+    "tm": "0:15",
+    "h": "Rice",
+    "tools": [
+     "stove"
+    ],
+    "p": "5 cups rice, 8½ cups water, salt. Lid, 14 min, rest 10. Cool on a tray, then 2 boxes."
+   },
+   {
+    "tm": "0:20",
+    "h": "Roasted veg tray",
+    "tools": [
+     "oven"
+    ],
+    "p": "Zapallo, pimentón, zanahoria, cebolla, 2 lb papa in chunks. Oil, salt, cumin. Bottom rack beside the chicken, 40 min."
+   },
+   {
+    "tm": "0:50",
+    "h": "Hummus",
+    "tools": [
+     "tmx"
+    ],
+    "p": "2 cups garbanzos, 3 tbsp tahini, juice of 1 lemon, 1 garlic, 2 tbsp olive oil, 1 tsp cumin, ¼ cup cooking liquid. Speed 7 · 45 s, scrape, 30 s."
+   },
+   {
+    "tm": "0:55",
+    "h": "Lentils, two ways",
+    "tools": [
+     "tmx"
+    ],
+    "p": "Onion, 2 garlic, carrot: speed 5 · 5 s. Oil, 250 °F · speed 1 · 4 min. 2½ cups lentils, salt, cumin, paprika, bay, 5½ cups water: 212 °F · speed 1 reverse · 25 min. Scoop 1½ cups for Wednesday's salad; add tomato, diced papa, pimentón to the rest, 12 min more."
+   },
+   {
+    "tm": "1:20",
+    "h": "Eggs and sauces",
+    "tools": [
+     "stove"
+    ],
+    "p": "Boil 10 eggs, 10 min, ice water. Tzatziki: 1¼ cups yogurt 0%, ½ grated cucumber, garlic, lemon, salt. Asian and Med dressings in jars."
+   },
+   {
+    "tm": "1:35",
+    "h": "Shred chicken, start stock",
+    "tools": [
+     "tmx"
+    ],
+    "p": "Rest 10 min, pull all meat (about 2 lb) + the extra trutro → 2 boxes. Bones in the Thermomix with 8 cups water: Varoma · speed 1 · 30 min. Freeze for Saturday's soup."
+   },
+   {
+    "tm": "1:45",
+    "h": "Assemble jars",
+    "tools": [],
+    "p": "3 overnight-oats jars per person for Mon/Wed/Fri, 2 Monday salad jars. Wash up. Done about 2:00."
+   }
+  ],
+  "backup": "Air-fry the 2 raw trutros (that is dinner). Second pot of rice, 2½ cups dry. Boil 6 more eggs. Mix Friday's tuna-garbanzo base, no dressing yet. Thaw Friday's salmon in the fridge Thursday night.",
+  "storage": [
+   {
+    "ic": "kitchen",
+    "t": "Chicken, rice, roasted veg",
+    "s": "4–5 days fridge · freeze one chicken box"
+   },
+   {
+    "ic": "ac_unit",
+    "t": "Lentejas guisadas, stock, fish",
+    "s": "5 days fridge · 3 months freezer"
+   },
+   {
+    "ic": "egg",
+    "t": "Boiled eggs, hummus, tzatziki",
+    "s": "7 days unpeeled · sauces 5 days"
+   }
+  ]
+ }
+}
