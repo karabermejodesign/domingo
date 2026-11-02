@@ -30,6 +30,7 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/week' && req.method === 'GET') return json(200, { weekId: seed.week.id, label: seed.week.label, plan: seed, state: db.state })
   if (url.pathname === '/api/week' && req.method === 'PATCH') { const b = JSON.parse(body); Object.assign(db.state, b.state); db.patches++; return json(200, { ok: true }) }
   if (url.pathname === '/api/rate' && req.method === 'GET') return json(200, { ratings: db.ratings })
+  if (url.pathname === '/api/pantry-photo' && req.method === 'POST') { const b = JSON.parse(body); db.photo = { bytes: b.image.length, known: b.known }; return json(200, { items: [{ name: 'Eggs', match: 'Eggs', note: 'about 6' }, { name: 'Half a jar of hummus', match: null }, { name: 'Rice', match: 'Rice' }] }) }
   if (url.pathname === '/api/rate' && req.method === 'POST') { db.ratings.push(JSON.parse(body)); return json(200, { ok: true }) }
   json(404, { error: 'nope' })
 })
@@ -71,6 +72,17 @@ await page.fill('#addItem', 'half a jar of hummus'); await page.press('#addItem'
 await page.waitForTimeout(900)
 t('free-text pantry item added and saved', (db.state.extraPantry || []).includes('half a jar of hummus'))
 t('staples shown as chips', (await page.$$('#stapleChips .chip')).length === seed.staples.length + 1)
+// pantry photo: feed a tiny PNG through the file input, expect the mock's three items, keep two
+await page.setInputFiles('#photoInput', { name: 'fridge.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64') })
+await page.waitForSelector('#photoList:not([hidden])')
+t('photo posted downscaled jpeg with known names', db.photo && db.photo.bytes > 100 && db.photo.known.includes('Eggs'))
+t('photo result lists three items ticked', (await page.$$('#photoList .cb.on')).length === 3)
+await click('#photoList [data-pi="2"]')
+await click('#photoKeep'); await page.waitForTimeout(900)
+t('photo keep: eggs toggled back on, hummus added as free text, rice (unticked) ignored', db.state.pantry.eggs === true && (db.state.extraPantry || []).some(x => x.startsWith('Half a jar of hummus')) && !(db.state.extraPantry || []).includes('Rice'))
+t('photo list cleared after keep', !(await page.isVisible('#photoList')))
+await click('input[data-pk="eggs"]'); await page.waitForTimeout(900)
+t('eggs toggled off again for the list assertions', db.state.pantry.eggs === false)
 
 await click('[data-go="deals"]'); await page.waitForSelector('#s-deals:not([hidden])')
 const groups = await page.$$eval('#dealGroups .eyebrow', els => els.map(e => e.textContent))

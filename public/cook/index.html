@@ -278,6 +278,13 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12p
       <div><h2>What do you still have?</h2><p class="muted" style="margin:4px 0 0">Toggle on anything from last week that's still in the fridge or pantry. Those lines drop off the grocery list.</p></div>
       <div class="chips" id="stapleChips"></div>
       <div class="list" id="pantryList"></div>
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <button class="btn tonal" id="photoBtn"><span class="ms">photo_camera</span>Photograph the fridge</button>
+        <span class="muted grow" id="photoHint">Snap a shelf; I'll list what I see and you tick what to keep.</span>
+        <input type="file" id="photoInput" accept="image/*" capture="environment" hidden>
+      </div>
+      <div class="list" id="photoList" hidden></div>
+      <div class="row" id="photoActions" style="gap:8px" hidden><button class="btn filled" id="photoKeep"><span class="ms">check</span>Add ticked to pantry</button><button class="btn text" id="photoClear">Discard</button></div>
       <div class="tf"><label for="addItem">Anything else?</label><span class="ms sm" style="color:var(--on-surface-variant)">add</span><input id="addItem" placeholder="e.g. half a jar of hummus" autocomplete="off"><button class="btn text" id="addItemBtn">Add</button></div>
       <div class="row between"><span class="muted" id="pantryCount"></span><button class="btn filled" data-go="deals">Next<span class="ms">arrow_forward</span></button></div>
     </section>
@@ -577,6 +584,46 @@ $('#resetBtn').onclick=()=>{S=freshState();persist();renderAll();snack('Week res
 $('#scrim').onclick=closeSheet;
 $('#addItemBtn').onclick=()=>{const v=$('#addItem').value.trim();if(!v||v.length>80)return;S.extraPantry.push(v);$('#addItem').value='';persist(['extraPantry']);renderPantry();snack('Added to pantry');};
 $('#addItem').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();$('#addItemBtn').click();}};
+
+/* ---------- Pantry photo ---------- */
+let photoItems=[];
+function knownNames(){return W.pantry.map(p=>p.t).concat(W.staples);}
+function downscale(file,max){return new Promise((resolve,reject)=>{const img=new Image();const url=URL.createObjectURL(file);img.onload=()=>{URL.revokeObjectURL(url);const r=Math.min(1,max/Math.max(img.width,img.height));const c=document.createElement('canvas');c.width=Math.round(img.width*r);c.height=Math.round(img.height*r);c.getContext('2d').drawImage(img,0,0,c.width,c.height);resolve(c.toDataURL('image/jpeg',0.82));};img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('bad image'));};img.src=url;});}
+function renderPhotoList(){
+  const L=$('#photoList');if(!photoItems.length){L.hidden=true;$('#photoActions').hidden=true;return;}
+  L.hidden=false;$('#photoActions').hidden=false;
+  L.innerHTML=photoItems.map((it,i)=>`<div class="li"><span class="cb ${it.on?'on':''}" role="checkbox" aria-checked="${!!it.on}" tabindex="0" data-pi="${i}"><span class="ms">check</span></span><div class="grow"><div class="t">${esc(it.name)}</div><div class="s">${it.match?'matches '+esc(it.match):'new item'}${it.note?' · '+esc(it.note):''}</div></div></div>`).join('');
+  L.querySelectorAll('[data-pi]').forEach(c=>{const f=()=>{photoItems[+c.dataset.pi].on=!photoItems[+c.dataset.pi].on;renderPhotoList();};c.onclick=f;c.onkeydown=e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();f();}};});
+}
+$('#photoBtn').onclick=()=>$('#photoInput').click();
+$('#photoInput').onchange=async()=>{
+  const f=$('#photoInput').files&&$('#photoInput').files[0];if(!f)return;$('#photoInput').value='';
+  const btn=$('#photoBtn');btn.disabled=true;$('#photoHint').textContent='Looking at the photo…';
+  try{
+    const dataUrl=await downscale(f,1200);
+    const r=await authFetch('/api/pantry-photo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:dataUrl,mime:'image/jpeg',known:knownNames()})});
+    if(r.status===401){signOut();return;}
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(j.error||'could not read the photo');
+    photoItems=(j.items||[]).map(it=>({...it,on:true}));
+    $('#photoHint').textContent=photoItems.length?`${photoItems.length} item${photoItems.length===1?'':'s'} seen. Untick anything wrong.`:'Nothing recognisable in that photo. Try closer, with the light on.';
+    renderPhotoList();
+  }catch(err){$('#photoHint').textContent=err.message;snack(err.message);}
+  finally{btn.disabled=false;}
+};
+$('#photoKeep').onclick=()=>{
+  let matched=0,added=0;
+  photoItems.filter(it=>it.on).forEach(it=>{
+    const p=it.match&&W.pantry.find(x=>x.t===it.match);
+    if(p){S.pantry[p.k]=true;matched++;}
+    else if(it.match&&W.staples.includes(it.match)){/* staples are always on hand */}
+    else{const label=it.note?`${it.name} (${it.note})`:it.name;if(!S.extraPantry.includes(label)){S.extraPantry.push(label);added++;}}
+  });
+  photoItems=[];renderPhotoList();$('#photoHint').textContent='Snap another shelf, or carry on.';
+  persist(['pantry','extraPantry']);renderPantry();renderList();
+  snack(`${matched} toggled on, ${added} added`);
+};
+$('#photoClear').onclick=()=>{photoItems=[];renderPhotoList();$('#photoHint').textContent='Snap a shelf; I\'ll list what I see and you tick what to keep.';};
 
 /* ---------- Send ---------- */
 const contact=load('cook:contact',{name:'',phone:'',email:''});
