@@ -45,7 +45,7 @@ const errors = []
 page.on('pageerror', e => errors.push(String(e)))
 page.on('console', m => { if (m.type() === 'error' && !/ERR_TUNNEL|status of 400/.test(m.text())) errors.push(m.text()) })  // fonts are blocked in the sandbox; the 400 is the deliberate wrong password
 
-await page.goto('http://127.0.0.1:4310/cook')
+await page.goto('http://127.0.0.1:4310/cook?today=2026-10-31')  // the planning Saturday for 2026-W45
 await page.waitForSelector('#s-login:not([hidden])')
 t('boot shows login when signed out', await page.isVisible('#loginForm'))
 t('nav hidden on login', !(await page.isVisible('nav.nav')))
@@ -104,7 +104,8 @@ t('rating chip highlighted', await page.$eval('[data-rate="0:d:1"]', el => el.cl
 
 await click('[data-go="list"]'); await page.waitForSelector('#s-list:not([hidden])')
 const storeHeads = await page.$$eval('#storeLists .eyebrow', els => els.map(e => e.textContent))
-t('store orders with days (Jumbo hidden: its only item is in the freezer)', storeHeads.length === 3 && storeHeads.some(h => h.includes('Aquality · Tuesday')) && storeHeads.some(h => h.includes('Juan Esparraguito · Wednesday')))
+t('store orders with days (Jumbo hidden: its only item is in the freezer)', storeHeads.length === 3 && storeHeads.some(h => h.includes('Aquality · Tuesday, in 3 days')) && storeHeads.some(h => h.includes('Juan Esparraguito · Wednesday, in 4 days')))
+t('Lider order is due today on the planning Saturday', storeHeads.some(h => h.includes('Lider · Saturday')) && (await page.textContent('#storeLists')).includes('Order today'))
 t('eggs now on the list (pantry off)', (await page.textContent('#storeLists')).includes('Huevos'))
 t('peanut butter under Already have', (await page.textContent('#haveList')).includes('Mantequilla'))
 const links = await page.$$eval('#storeLists a', as => as.map(a => a.href))
@@ -131,6 +132,31 @@ t('copy marks week as sent', db.state.sent === true && await page.isVisible('#do
 
 await page.reload(); await page.waitForSelector('#s-send:not([hidden]), #s-home:not([hidden])')
 t('reload keeps session and lands on saved step', (await page.textContent('#title')) === 'Send')
+
+// Date awareness: the same plan, viewed on other days
+await page.goto('http://127.0.0.1:4310/cook?today=2026-11-01'); await page.waitForSelector('#s-send:not([hidden]), #s-home:not([hidden])')
+await click('[data-nav="home"]'); await page.waitForSelector('#s-home:not([hidden])')
+t('Sunday with no order placed: home says so', (await page.textContent('#weekLead')).includes("hasn't gone in"))
+await click('[data-nav="list"]'); await page.waitForSelector('#s-list:not([hidden])')
+t('Lider header flips to late', (await page.textContent('#storeLists')).includes('Lider · was Saturday') && (await page.textContent('#storeLists')).includes('1 day late'))
+await click('[data-nav="cook"]'); await page.waitForSelector('#s-cook:not([hidden])')
+t('cook screen waits for groceries', (await page.textContent('#cookTitle')).includes('once the groceries land') && (await page.textContent('#cookWhen')).includes('Sun 1 Nov'))
+await click('[data-go="send"]'); await page.waitForSelector('#s-send:not([hidden])')
+t('message says order today, was Saturday', (await page.textContent('#preview')).includes('LIDER, order today (was Saturday)'))
+await click('[data-nav="list"]'); await page.waitForSelector('#s-list:not([hidden])')
+await click('[data-mark="lider"]'); await page.waitForTimeout(900)
+t('Mark ordered ticks every Lider line and saves', (await page.textContent('#storeLists')).includes('Ordered') && Object.values(db.state.bought).filter(Boolean).length >= 10)
+await click('[data-nav="home"]'); await page.waitForSelector('#s-home:not([hidden])')
+t('Sunday with groceries in: time to cook', (await page.textContent('#weekLead')).includes('time to batch cook'))
+await page.goto('http://127.0.0.1:4310/cook?today=2026-11-03'); await page.waitForSelector('#s-send:not([hidden]), #s-home:not([hidden])')
+await click('[data-nav="home"]'); await page.waitForSelector('#s-home:not([hidden])')
+t('mid-week home shows day of week and tonight\'s dinner', /Tuesday, day 2 of 7\. Tonight: /.test(await page.textContent('#weekLead')))
+await click('[data-nav="menu"]'); await page.waitForSelector('#s-menu:not([hidden])')
+t('menu opens on today with a Today badge', await page.$eval('#days details:nth-child(2)', d => d.open && d.textContent.includes('Today')) && !(await page.$eval('#days details:first-child', d => d.open)))
+t('menu days carry dates', (await page.textContent('#days details:first-child .dn')).includes('2'))
+await click('[data-nav="list"]'); await page.waitForSelector('#s-list:not([hidden])')
+t('Lider stays Ordered mid-week, Aquality is due today', (await page.textContent('#storeLists')).includes('Ordered') && (await page.textContent('#storeLists')).includes('Aquality · Tuesday'))
+await page.goto('http://127.0.0.1:4310/cook'); await page.waitForSelector('#s-send:not([hidden]), #s-home:not([hidden])')
 await click('#outBtn'); await page.waitForSelector('#s-login:not([hidden])')
 t('sign out returns to login', !(await page.evaluate(() => localStorage.getItem('cook_sess'))))
 

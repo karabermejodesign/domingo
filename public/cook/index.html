@@ -320,7 +320,7 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12p
     </section>
 
     <section class="screen" id="s-cook" hidden>
-      <div><h2>Sunday batch cook</h2><p class="muted" style="margin:4px 0 0" id="cookIntro"></p></div>
+      <div><h2 id="cookTitle">Sunday batch cook</h2><p class="muted" style="margin:4px 0 0" id="cookWhen" hidden></p><p class="muted" style="margin:4px 0 0" id="cookIntro"></p></div>
       <div class="tl" id="timeline"></div>
       <h3>Wednesday backup · 30 min</h3>
       <div class="card"><p style="margin:0" id="backup"></p></div>
@@ -476,7 +476,7 @@ async function loadWeek(){
 
 /* ---------- Render ---------- */
 function renderHome(){
-  $('#weekLbl').textContent=W.week.label;$('#weekLead').textContent=W.week.lead||'Time to plan the week.';
+  const ph=weekPhase();$('#weekLbl').textContent=W.week.label;$('#weekLead').textContent=ph.lead;
   $('#targetBadges').innerHTML=`<span class="badge ok" style="background:var(--surface);color:var(--on-surface)">Budget ${Math.round(W.week.budgetMin/1000)}–${Math.round(W.week.budget/1000)}k</span><span class="badge ok" style="background:var(--surface);color:var(--on-surface)">Kara ${esc(W.targets.kara)} · Tomas ${esc(W.targets.tomas)}</span>`;
   $('#homeSteps').innerHTML=STEPS.map((s,i)=>`<div class="li" role="button" tabindex="0" data-go="${s.id}"><span class="lead-ic"><span class="ms">${s.ic}</span></span><div class="grow"><div class="t">${i+1}. ${s.t}</div><div class="s">${s.s}</div></div><span class="ms" style="color:var(--on-surface-variant)">chevron_right</span></div>`).join('');
   const lw=W.lastWeek;
@@ -503,10 +503,11 @@ function myRating(day,slot){const r=ratings.find(x=>x.day===day&&x.slot===slot&&
 function otherRating(day,slot){const r=ratings.find(x=>x.day===day&&x.slot===slot&&x.user_id!==me);return r?r.rating:0;}
 function renderMenu(){
   let sk=0,st=0,skc=0,stc=0;
+  const ph=weekPhase(),openDay=ph.key==='eat'?ph.day:0,mon=weekMonday();
   $('#days').innerHTML=S.menu.map((dy,i)=>{const tt=dayTotals(dy);sk+=tt.k;st+=tt.t;skc+=tt.kc;stc+=tt.tc;
    const row=(slot,pool,idx)=>{const m=W.meals[pool][idx];const mine=myRating(i,pool),other=otherRating(i,pool);
      return`<div class="meal"><span class="slot">${slot}</span><div class="grow"><div class="mt">${esc(m[0])}</div><div class="mm"><b>${m[1]} g</b> · ${m[2]} kcal &nbsp;|&nbsp; <b>${m[3]} g</b> · ${m[4]} kcal</div></div><button class="iconbtn" data-swap="${i}:${pool}" aria-label="Swap ${slot}"><span class="ms">swap_horiz</span></button></div><div class="rate">${RATE.map(([v,l])=>`<button data-rate="${i}:${pool}:${v}" class="${mine===v?'on':''}">${l}</button>`).join('')}${other?`<span class="who">· other: ${RATE[other-1][1]}</span>`:''}</div>`;};
-   return`<details class="day" ${i===0?'open':''}><summary><span class="dn">${esc(W.days[i])}</span><span class="grow pro">Kara <b style="color:var(--on-surface)">${tt.k} g</b> · ${tt.kc} kcal &nbsp;·&nbsp; Tomas <b style="color:var(--on-surface)">${tt.t} g</b> · ${tt.tc} kcal</span><span class="ms chev">expand_more</span></summary>${row('B','b',dy.b)}${row('L','l',dy.l)}${row('D','d',dy.d)}</details>`;}).join('');
+   return`<details class="day" ${i===openDay?'open':''}><summary><span class="dn">${esc(W.days[i])}<span class="muted" style="font-weight:400;font-size:11px;display:block">${addDays(mon,i).getDate()}</span></span>${ph.key==='eat'&&i===ph.day?'<span class="badge ok">Today</span>':''}<span class="grow pro">Kara <b style="color:var(--on-surface)">${tt.k} g</b> · ${tt.kc} kcal &nbsp;·&nbsp; Tomas <b style="color:var(--on-surface)">${tt.t} g</b> · ${tt.tc} kcal</span><span class="ms chev">expand_more</span></summary>${row('B','b',dy.b)}${row('L','l',dy.l)}${row('D','d',dy.d)}</details>`;}).join('');
   $('#avgK').textContent=`${Math.round(sk/7)} g protein · ${Math.round(skc/7).toLocaleString('es-CL')} kcal from meals`;
   $('#avgT').textContent=`${Math.round(st/7)} g protein · ${Math.round(stc/7).toLocaleString('es-CL')} kcal`;
   const ok=sk/7>=W.targets.kMin&&st/7>=W.targets.tMin;$('#menuOk').textContent=ok?'On target':'Below target';$('#menuOk').className='badge '+(ok?'ok':'warn');
@@ -525,11 +526,58 @@ function openSwap(key){
 function closeSheet(){$('#scrim').hidden=true;$('#sheet').hidden=true;}
 const included=it=>!(it.pk&&S.pantry[it.pk]);
 const allItems=()=>W.stores.flatMap(s=>W.groceries[s.key]||[]);
+
+/* ---------- Dates: the plan is relative to the week it serves ----------
+   The eating week runs Mon-Sun (ISO week id, or week.start as YYYY-MM-DD).
+   Saturday orders and the Sunday cook sit on the weekend before it.
+   ?today=YYYY-MM-DD previews any day (also used by the e2e run). */
+const DOW=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const DAY_MS=864e5;
+const addDays=(d,n)=>new Date(d.getFullYear(),d.getMonth(),d.getDate()+n);
+const daysBetween=(a,b)=>Math.round((b-a)/DAY_MS);
+const fmtDay=d=>d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'});
+function today(){
+  const q=new URLSearchParams(location.search).get('today');
+  if(q&&/^\d{4}-\d{2}-\d{2}$/.test(q)){const [y,m,d]=q.split('-').map(Number);return new Date(y,m-1,d);}
+  const n=new Date();return new Date(n.getFullYear(),n.getMonth(),n.getDate());
+}
+function weekMonday(){
+  if(W.week.start&&/^\d{4}-\d{2}-\d{2}$/.test(W.week.start)){const [y,m,d]=W.week.start.split('-').map(Number);return new Date(y,m-1,d);}
+  const m=/^(\d{4})-W(\d{2})$/.exec(W.week.id||'');
+  if(m){const jan4=new Date(+m[1],0,4);return new Date(+m[1],0,4-((jan4.getDay()+6)%7)+(+m[2]-1)*7);}
+  const t=today();return addDays(t,-((t.getDay()+6)%7));
+}
+function orderDate(s){
+  const i=DOW.findIndex(n=>n.toLowerCase()===String(s.day||'').toLowerCase());if(i<0)return null;
+  const mon=weekMonday();return i===6?addDays(mon,-2):i===0?addDays(mon,-1):addDays(mon,i-1);
+}
+function storeStatus(s){
+  const items=(W.groceries[s.key]||[]).filter(included);
+  const d=orderDate(s);
+  if(items.length&&items.every(it=>S.bought[it.t]))return{kind:'done',when:d?fmtDay(d):s.day,badge:'Ordered',cls:'ok'};
+  if(!d)return{kind:'plan',when:s.day};
+  const diff=daysBetween(today(),d);
+  if(diff===0)return{kind:'today',when:s.day,badge:'Order today',cls:'deal'};
+  if(diff<0)return{kind:'late',when:`was ${s.day}`,badge:`Order today · ${-diff} day${-diff===1?'':'s'} late`,cls:'warn',late:-diff};
+  return{kind:'plan',when:diff===1?`${s.day}, tomorrow`:`${s.day}, in ${diff} days`};
+}
+function weekPhase(){
+  const mon=weekMonday(),t=today(),day=daysBetween(mon,t);   // Sat before = -2, Sun = -1, Mon = 0 ... Sun = 6
+  const main=W.stores.find(s=>s.key==='lider')||W.stores[0];const st=main?storeStatus(main):{kind:'plan'};
+  const dinner=(i)=>{const dy=S.menu[i];return dy?W.meals.d[dy.d][0]:'';};
+  if(st.kind==='late')return{key:'late',cookLate:true,lead:`It's ${DOW[t.getDay()]} and the ${main.label} order hasn't gone in. Order today; the cook moves to the day it lands.`};
+  if(day===-1&&st.kind==='done')return{key:'cook',lead:'Sunday. Groceries are in, time to batch cook.'};
+  if(day>=0&&day<=6)return{key:'eat',day,lead:`${DOW[t.getDay()]}, day ${day+1} of 7. Tonight: ${dinner(day)}.`};
+  if(day>6)return{key:'over',lead:'This week is done. The next plan lands Saturday.'};
+  return{key:'plan',lead:W.week.lead||'Time to plan the week.'};
+}
+function markStore(key,on){(W.groceries[key]||[]).filter(included).forEach(it=>S.bought[it.t]=!!on);persist(['bought']);renderAll();snack(on?'Marked as ordered':'Order reopened');}
 function renderList(){
   const row=it=>`<div class="li ${S.bought[it.t]?'done':''}"><span class="cb ${S.bought[it.t]?'on':''}" role="checkbox" aria-checked="${!!S.bought[it.t]}" tabindex="0" data-buy="${esc(it.t)}"><span class="ms">check</span></span><div class="grow"><div class="t"><a href="${esc(it.url)}" target="_blank" rel="noopener">${esc(it.t)}</a></div><div class="s">${esc(it.q||'')}${it.deal?' · <span class="badge deal">Deal</span>':''}${it.est?' · <span class="badge est">estimate</span>':''}</div></div><span class="price">${clp(it.p)}</span></div>`;
   let tot=0;
   $('#storeLists').innerHTML=W.stores.map(s=>{const items=(W.groceries[s.key]||[]).filter(included);const sub=items.reduce((a,b)=>a+b.p,0);tot+=sub;if(!items.length)return'';
-    return`<div style="display:flex;flex-direction:column;gap:8px"><div class="row" style="gap:8px;flex-wrap:wrap"><span class="eyebrow">${esc(s.label)} · ${esc(s.day)}</span>${s.badge?`<span class="badge deal">${esc(s.badge)}</span>`:s.sub?`<span class="muted">${esc(s.sub)}</span>`:''}<span class="price grow" style="text-align:right">${clp(sub)}</span></div><div class="list">${items.map(row).join('')}</div>${s.note?`<p class="muted" style="margin:0">${esc(s.note)}</p>`:''}</div>`;}).join('');
+    const st=storeStatus(s);
+    return`<div style="display:flex;flex-direction:column;gap:8px"><div class="row" style="gap:8px;flex-wrap:wrap"><span class="eyebrow">${esc(s.label)} · ${esc(st.when)}</span>${st.badge?`<span class="badge ${st.cls}">${esc(st.badge)}</span>`:s.badge?`<span class="badge deal">${esc(s.badge)}</span>`:s.sub?`<span class="muted">${esc(s.sub)}</span>`:''}<span class="price grow" style="text-align:right">${clp(sub)}</span></div><div class="list">${items.map(row).join('')}</div><div class="row" style="gap:8px;flex-wrap:wrap">${s.note?`<p class="muted grow" style="margin:0">${esc(s.note)}</p>`:'<span class="grow"></span>'}<button class="btn text" data-mark="${esc(s.key)}" data-on="${st.kind==='done'?0:1}">${st.kind==='done'?'Reopen order':'Mark ordered'}</button></div></div>`;}).join('');
   const have=allItems().filter(it=>!included(it));
   $('#total').textContent=clp(tot);$('#budgetOf').textContent=`of ${clp(W.week.budget)}`;
   const pct=Math.min(100,tot/W.week.budget*100);$('#budgetBar').querySelector('i').style.width=pct+'%';$('#budgetBar').classList.toggle('over',tot>W.week.budget);
@@ -539,11 +587,16 @@ function renderList(){
   else{bd.textContent='In range';bd.className='badge ok';$('#budgetNote').textContent=`Within the ${Math.round(W.week.budgetMin/1000)}–${Math.round(W.week.budget/1000)}k target.`;}
   $('#haveCount').textContent=`(${have.length}, saved ${clp(have.reduce((a,b)=>a+b.p,0))})`;
   $('#haveList').innerHTML=have.map(it=>`<div class="meal"><span class="ms" style="color:var(--on-surface-variant)">check</span><div class="grow"><div class="mt" style="color:var(--on-surface-variant)">${esc(it.t)}</div></div><span class="price" style="color:var(--on-surface-variant);text-decoration:line-through">${clp(it.p)}</span></div>`).join('')||'<p class="muted" style="padding:0 16px 12px">Nothing yet. Toggle items in the pantry check.</p>';
-    document.querySelectorAll('[data-buy]').forEach(c=>{const f=()=>{S.bought[c.dataset.buy]=!S.bought[c.dataset.buy];persist(['bought']);renderList();};c.onclick=f;c.onkeydown=e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();f();}};});
+    document.querySelectorAll('[data-buy]').forEach(c=>{const f=()=>{S.bought[c.dataset.buy]=!S.bought[c.dataset.buy];persist(['bought']);renderList();renderHome();renderCook();};c.onclick=f;c.onkeydown=e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();f();}};});
+  document.querySelectorAll('[data-mark]').forEach(b=>b.onclick=()=>markStore(b.dataset.mark,b.dataset.on==='1'));
   renderSend();
 }
 function renderCook(){
   const c=W.cook;$('#cookIntro').textContent=c.intro||'';
+  const ph=weekPhase(),sun=addDays(weekMonday(),-1),t=today(),w=$('#cookWhen');
+  if(ph.cookLate){$('#cookTitle').textContent='Batch cook, once the groceries land';w.hidden=false;w.style.color='var(--error)';w.textContent=`Planned for ${fmtDay(sun)}. Cook the day the order arrives; the Wednesday backup still covers Thu to Sun.`;}
+  else if(daysBetween(t,sun)===0){$('#cookTitle').textContent='Sunday batch cook, today';w.hidden=true;}
+  else{$('#cookTitle').textContent='Sunday batch cook';w.hidden=false;w.style.color='';w.textContent=daysBetween(t,sun)>0?`${fmtDay(sun)}, ${daysBetween(t,sun)===1?'tomorrow':'in '+daysBetween(t,sun)+' days'}.`:`Done ${fmtDay(sun)}. Wednesday backup covers Thu to Sun.`;}
   $('#timeline').innerHTML=c.timeline.map(s=>`<div class="tli"><span class="tm">${esc(s.tm)}</span><div class="tc"><div class="row" style="gap:8px;flex-wrap:wrap"><h3 class="grow">${esc(s.h)}</h3>${(s.tools||[]).map(t=>TOOL[t]?`<span class="tool"><span class="ms">${TOOL[t][0]}</span>${TOOL[t][1]}</span>`:'').join('')}</div><p class="muted" style="font-size:13px;color:var(--on-surface)">${esc(s.p)}</p></div></div>`).join('');
   $('#backup').textContent=c.backup||'';
   $('#storage').innerHTML=(c.storage||[]).map(s=>`<div class="li"><span class="lead-ic"><span class="ms">${esc(s.ic||'inventory_2')}</span></span><div class="grow"><div class="t">${esc(s.t)}</div><div class="s">${esc(s.s)}</div></div></div>`).join('');
@@ -551,7 +604,8 @@ function renderCook(){
 function messageText(){
   const tot=allItems().filter(included).reduce((a,b)=>a+b.p,0);
   const groups=W.stores.map(s=>{const items=(W.groceries[s.key]||[]).filter(included);if(!items.length)return'';
-    return`${s.label.toUpperCase()}, order ${s.day}${s.badge?' ('+s.badge+')':''}\n`+items.map(it=>`• ${it.t} · ${it.q}  ${clp(it.p)}\n  ${it.url}`).join('\n');}).filter(Boolean).join('\n\n');
+    const st=storeStatus(s);const when=st.kind==='done'?'ordered':st.kind==='late'?`order today (was ${s.day})`:st.kind==='today'?'order today':`order ${s.day}`;
+    return`${s.label.toUpperCase()}, ${when}${s.badge?' ('+s.badge+')':''}\n`+items.map(it=>`• ${it.t} · ${it.q}  ${clp(it.p)}\n  ${it.url}`).join('\n');}).filter(Boolean).join('\n\n');
   const have=allItems().filter(it=>!included(it)).map(i=>i.t.split(' ')[0]);
   return`Groceries, ${W.week.label} · ${clp(tot)} (budget ${Math.round(W.week.budget/1000)}k)\n\n${groups}\n\nAlready have: ${have.join(', ')||'nothing'}\n\nCook plan: ${location.origin}/cook#cook`;
 }
