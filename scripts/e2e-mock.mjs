@@ -27,11 +27,18 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/auth/v1/user') return authed ? json(200, { id: 'u1' }) : json(401, {})
   if (!authed) return json(401, { error: 'Sign in to use this' })
-  if (url.pathname === '/api/week' && req.method === 'GET') return json(200, { weekId: seed.week.id, label: seed.week.label, plan: seed, state: db.state, settings: db.settings })
+  if (url.pathname === '/api/week' && req.method === 'GET') return json(200, { weekId: seed.week.id, label: seed.week.label, plan: db.plan || seed, state: db.state, settings: db.settings })
   if (url.pathname === '/api/week' && req.method === 'PATCH') { const b = JSON.parse(body); Object.assign(db.state, b.state); db.patches++; return json(200, { ok: true }) }
   if (url.pathname === '/api/rate' && req.method === 'GET') return json(200, { ratings: db.ratings })
   if (url.pathname === '/api/pantry-photo' && req.method === 'POST') { const b = JSON.parse(body); db.photo = { bytes: b.image.length, known: b.known }; return json(200, { items: [{ name: 'Eggs', match: 'Eggs', note: 'about 6' }, { name: 'Half a jar of hummus', match: null }, { name: 'Rice', match: 'Rice' }] }) }
   if (url.pathname === '/api/settings' && req.method === 'PATCH') { const b = JSON.parse(body); if (b.budget === null) delete db.settings.budget; else if (Number.isInteger(b.budget) && b.budget >= 20000) db.settings.budget = { max: b.budget }; else return json(400, { error: 'budget must be a whole number between 20000 and 2000000 CLP' }); return json(200, { ok: true, settings: db.settings }) }
+  if (url.pathname === '/api/prices' && req.method === 'POST') {
+    db.priceCalls = (db.priceCalls || 0) + 1
+    const plan = JSON.parse(JSON.stringify(db.plan || seed)); const l = plan.groceries.lider[0]; const before = seed.groceries.lider[0].p
+    l.p = 6990; l.unit = 6990; l.prev = before; l.promo = 'Rebaja'; l.deal = true; l.pUrl = 'https://super.lider.cl/ip/pollo-entero-seara/123'
+    plan.week.pricesCheckedAt = '2026-10-31T15:00:00.000Z'; plan.week.pricesChecked = 'Prices re-checked (mock)'; db.plan = plan
+    return json(200, { plan, checked: 17, matched: 16, changed: [{ t: l.t, from: before, to: 6990 }] })
+  }
   if (url.pathname === '/api/rate' && req.method === 'POST') { db.ratings.push(JSON.parse(body)); return json(200, { ok: true }) }
   json(404, { error: 'nope' })
 })
@@ -178,6 +185,25 @@ t('menu opens on today with a Today badge', await page.$eval('#days details:nth-
 t('menu days carry dates', (await page.textContent('#days details:first-child .dn')).includes('2'))
 await click('[data-nav="list"]'); await page.waitForSelector('#s-list:not([hidden])')
 t('Lider stays Ordered mid-week, Aquality is due today', (await page.textContent('#storeLists')).includes('Ordered') && (await page.textContent('#storeLists')).includes('Aquality · Tuesday'))
+
+// Price refresh: button, stamp, product link, and the auto-run when an order is due.
+// The late-Sunday block above already triggered one automatic check (Lider overdue, no stamp yet).
+t('overdue order triggered one automatic price check', db.priceCalls === 1)
+await page.goto('http://127.0.0.1:4310/cook?today=2026-10-29'); await page.waitForSelector('#s-send:not([hidden]), #s-home:not([hidden])')
+await click('[data-nav="list"]'); await page.waitForSelector('#s-list:not([hidden])'); await page.waitForTimeout(400)
+t('no automatic check when nothing is due', db.priceCalls === 1 && (await page.textContent('#priceStamp')).includes('Prices checked Sat 31 Oct'))
+t('line shows new price, promo and was-price', (await page.textContent('#storeLists')).includes('$6.990') && (await page.textContent('#storeLists')).includes('Rebaja') && (await page.textContent('#storeLists')).includes('was $7.190'))
+t('line links to the product page once known', (await page.$$eval('#storeLists a', as => as.map(a => a.href))).includes('https://super.lider.cl/ip/pollo-entero-seara/123'))
+await click('#refreshBtn'); await page.waitForFunction(() => !document.querySelector('#refreshBtn').disabled)
+t('Refresh prices button calls the route', db.priceCalls === 2)
+t('snack reports the change', (await page.textContent('#snackTxt')).includes('1 price changed'))
+await page.goto('http://127.0.0.1:4310/cook?today=2026-11-01'); await page.waitForSelector('#s-send:not([hidden]), #s-home:not([hidden])'); await page.waitForTimeout(500)
+t('automatic check runs once per app open', db.priceCalls === 2)
+await click('[data-nav="list"]'); await page.waitForSelector('#s-list:not([hidden])')
+t('stale stamp warns when an order is pending', (await page.textContent('#priceStamp')).includes('may have moved'))
+await page.evaluate(() => sessionStorage.clear()); await page.reload(); await page.waitForSelector('#s-list:not([hidden]), #s-send:not([hidden]), #s-home:not([hidden])')
+await page.waitForFunction(() => !document.querySelector('#refreshBtn').disabled); await page.waitForTimeout(200)
+t('next app open with a pending order checks again', db.priceCalls === 3)
 await page.goto('http://127.0.0.1:4310/cook'); await page.waitForSelector('#s-send:not([hidden]), #s-home:not([hidden])')
 await click('#outBtn'); await page.waitForSelector('#s-login:not([hidden])')
 t('sign out returns to login', !(await page.evaluate(() => localStorage.getItem('cook_sess'))))

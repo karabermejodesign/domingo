@@ -313,6 +313,7 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12p
         <div class="row between"><span class="big num" id="total"></span><button class="muted num" id="budgetOf" data-budget style="background:transparent;border:0;cursor:pointer;font:inherit;color:inherit;padding:0" aria-label="Change the weekly budget"></button></div>
         <div class="bar" id="budgetBar"><i></i></div>
         <p class="muted" style="margin:0" id="budgetNote"></p>
+        <div class="row" style="gap:8px;flex-wrap:wrap"><span class="muted grow" id="priceStamp"></span><button class="btn tonal" id="refreshBtn"><span class="ms">sync</span><span id="refreshLbl">Refresh prices</span></button></div>
       </div>
       <div id="storeLists" style="display:flex;flex-direction:column;gap:16px"></div>
       <details class="day"><summary><span class="ms chev">expand_more</span><span class="grow">Already have <span class="muted" id="haveCount"></span></span></summary><div id="haveList"></div></details>
@@ -617,7 +618,7 @@ function weekPhase(){
 }
 function markStore(key,on){(W.groceries[key]||[]).filter(included).forEach(it=>S.bought[it.t]=!!on);persist(['bought']);renderAll();snack(on?'Marked as ordered':'Order reopened');}
 function renderList(){
-  const row=it=>`<div class="li ${S.bought[it.t]?'done':''}"><span class="cb ${S.bought[it.t]?'on':''}" role="checkbox" aria-checked="${!!S.bought[it.t]}" tabindex="0" data-buy="${esc(it.t)}"><span class="ms">check</span></span><div class="grow"><div class="t"><a href="${esc(it.url)}" target="_blank" rel="noopener">${esc(it.t)}</a></div><div class="s">${esc(it.q||'')}${it.deal?' · <span class="badge deal">Deal</span>':''}${it.est?' · <span class="badge est">estimate</span>':''}</div></div><span class="price">${clp(it.p)}</span></div>`;
+  const row=it=>`<div class="li ${S.bought[it.t]?'done':''}"><span class="cb ${S.bought[it.t]?'on':''}" role="checkbox" aria-checked="${!!S.bought[it.t]}" tabindex="0" data-buy="${esc(it.t)}"><span class="ms">check</span></span><div class="grow"><div class="t"><a href="${esc(it.pUrl||it.url)}" target="_blank" rel="noopener">${esc(it.t)}</a></div><div class="s">${esc(it.q||'')}${it.deal?` · <span class="badge deal">${esc(it.promo||'Deal')}</span>`:''}${it.est?' · <span class="badge est">estimate</span>':''}${it.prev?` · <span class="muted">was ${clp(it.prev)}</span>`:''}</div></div><span class="price">${clp(it.p)}</span></div>`;
   let tot=0;
   $('#storeLists').innerHTML=W.stores.map(s=>{const items=(W.groceries[s.key]||[]).filter(included);const sub=items.reduce((a,b)=>a+b.p,0);tot+=sub;if(!items.length)return'';
     const st=storeStatus(s);
@@ -630,12 +631,41 @@ function renderList(){
   if(tot>B.max){bd.textContent='Over budget';bd.className='badge warn';$('#budgetNote').textContent=`${clp(tot-B.max)} over. Swap the whole chicken for trutro corto or drop one yogurt.`;}
   else if(tot<B.min){bd.textContent=`${clp(B.min-tot)} under`;bd.className='badge ok';$('#budgetNote').textContent='Room for snacks: nuts, extra fruit, a second peanut butter.';}
   else{bd.textContent='In range';bd.className='badge ok';$('#budgetNote').textContent=B.custom?`Within your ${kk(B.max)} budget.`:B.min<B.max?`Within the ${kk(B.min)} to ${kk(B.max)} target.`:`Within the ${kk(B.max)} budget.`;}
+  renderPriceStamp();
   $('#haveCount').textContent=`(${have.length}, saved ${clp(have.reduce((a,b)=>a+b.p,0))})`;
   $('#haveList').innerHTML=have.map(it=>`<div class="meal"><span class="ms" style="color:var(--on-surface-variant)">check</span><div class="grow"><div class="mt" style="color:var(--on-surface-variant)">${esc(it.t)}</div></div><span class="price" style="color:var(--on-surface-variant);text-decoration:line-through">${clp(it.p)}</span></div>`).join('')||'<p class="muted" style="padding:0 16px 12px">Nothing yet. Toggle items in the pantry check.</p>';
     document.querySelectorAll('[data-buy]').forEach(c=>{const f=()=>{S.bought[c.dataset.buy]=!S.bought[c.dataset.buy];persist(['bought']);renderList();renderHome();renderCook();};c.onclick=f;c.onkeydown=e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();f();}};});
   document.querySelectorAll('[data-mark]').forEach(b=>b.onclick=()=>markStore(b.dataset.mark,b.dataset.on==='1'));
   renderSend();
 }
+/* ---------- Prices: re-read from the store pages via /api/prices ---------- */
+let pricing=false;
+function priceAge(){const at=W.week.pricesCheckedAt;if(!at)return null;const d=new Date(at);return isNaN(d)?null:daysBetween(new Date(d.getFullYear(),d.getMonth(),d.getDate()),today());}
+function pendingOrder(){return W.stores.some(s=>{const k=storeStatus(s).kind;return k==='today'||k==='late';});}
+function renderPriceStamp(){
+  const el=$('#priceStamp'),age=priceAge(),at=W.week.pricesCheckedAt?new Date(W.week.pricesCheckedAt):null;
+  if(pricing){el.textContent='Reading the store pages…';el.style.color='';}
+  else if(at){const stale=age>=1&&pendingOrder();el.textContent=`Prices checked ${age===0?'today':fmtDay(at)}${stale?', may have moved':''}`;el.style.color=stale?'var(--error)':'';}
+  else{el.textContent='Prices from when the week was planned';el.style.color=pendingOrder()?'var(--error)':'';}
+  $('#refreshBtn').disabled=pricing;$('#refreshLbl').textContent=pricing?'Checking…':'Refresh prices';
+}
+async function refreshPrices(auto){
+  if(pricing||!weekId)return;pricing=true;renderPriceStamp();
+  try{
+    const r=await authFetch('/api/prices',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({weekId})});
+    if(r.status===401){signOut();return;}
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(j.error||('HTTP '+r.status));
+    if(j.plan)W=j.plan;pricing=false;renderAll();
+    const n=(j.changed||[]).length;
+    snack(n?`${n} price${n===1?'':'s'} changed, ${j.matched} of ${j.checked} lines checked`:`Prices current, ${j.matched} of ${j.checked} lines checked`);
+  }catch(e){pricing=false;renderPriceStamp();if(!auto)snack(String(e.message||'Could not check prices'));}
+}
+$('#refreshBtn').onclick=()=>refreshPrices(false);
+/* An order due today or overdue, with prices older than today: check once per app open, without asking. */
+function maybeAutoRefresh(){try{if(sessionStorage.getItem('cook_autoprice')===weekId)return;}catch(_){}
+  const age=priceAge();if(pendingOrder()&&(age===null||age>=1)){try{sessionStorage.setItem('cook_autoprice',weekId);}catch(_){}refreshPrices(true);}}
+
 function renderCook(){
   const c=W.cook;$('#cookIntro').textContent=c.intro||'';
   const ph=weekPhase(),sun=addDays(weekMonday(),-1),t=today(),w=$('#cookWhen');
@@ -769,7 +799,7 @@ async function showApp(){
   try{
     const ok=await loadWeek();if(!ok)return;
     $('#loading').hidden=true;$('#outBtn').hidden=false;document.querySelector('.nav').hidden=false;
-    renderAll();const h=location.hash.slice(1);go(TITLES[h]?h:'home');
+    renderAll();const h=location.hash.slice(1);go(TITLES[h]?h:'home');maybeAutoRefresh();
   }catch(err){$('#loading').textContent='Could not load this week ('+err.message+'). Pull to refresh or try again in a minute.';}
 }
 $('#loginForm').onsubmit=async e=>{
