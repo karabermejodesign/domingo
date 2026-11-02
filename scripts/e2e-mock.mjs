@@ -93,10 +93,16 @@ await page.fill('#addItem', 'half a jar of hummus'); await page.press('#addItem'
 await page.waitForTimeout(900)
 t('free-text pantry item added and saved', (db.state.extraPantry || []).includes('half a jar of hummus'))
 t('staples shown as chips', (await page.$$('#stapleChips .chip')).length === seed.staples.length + 1)
+// a free-text pantry item covers the matching grocery line, in English, until it is removed again
+await page.fill('#addItem', 'Frozen spinach'); await page.press('#addItem', 'Enter'); await page.waitForTimeout(300)
+t('free-text item in English drops the Spanish line from the list', !(await page.textContent('#storeLists')).includes('Espinaca') && (await page.textContent('#haveList')).includes('Espinaca congelada') && (await page.textContent('#haveList')).includes('you have: Frozen spinach'))
+t('snack says a line was dropped', (await page.textContent('#snackTxt')).includes('1 line dropped'))
+await click('#pantryList [data-rm="1"]'); await page.waitForTimeout(900)
+t('removing the item brings the line back', (await page.textContent('#storeLists')).includes('Espinaca congelada') && !(await page.textContent('#haveList')).includes('Espinaca') && !(db.state.extraPantry || []).includes('Frozen spinach'))
 // pantry photo: feed a tiny PNG through the file input, expect the mock's three items, keep two
 await page.setInputFiles('#photoInput', { name: 'fridge.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64') })
 await page.waitForSelector('#photoList:not([hidden])')
-t('photo posted downscaled jpeg with known names', db.photo && db.photo.bytes > 100 && db.photo.known.includes('Eggs'))
+t('photo posted downscaled jpeg with known names incl. grocery lines', db.photo && db.photo.bytes > 100 && db.photo.known.includes('Eggs') && db.photo.known.includes('Brócoli congelado 500 g'))
 t('photo result lists three items ticked', (await page.$$('#photoList .cb.on')).length === 3)
 await click('#photoList [data-pi="2"]')
 await click('#photoKeep'); await page.waitForTimeout(900)

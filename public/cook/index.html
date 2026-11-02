@@ -518,7 +518,7 @@ function renderPantry(){
   const n=Object.values(S.pantry).filter(Boolean).length+S.extraPantry.length;
   $('#pantryCount').textContent=`${n} item${n===1?'':'s'} skipped on the list`;
   $('#pantryList').querySelectorAll('input[data-pk]').forEach(i=>i.onchange=()=>{S.pantry[i.dataset.pk]=i.checked;persist(['pantry']);renderPantry();renderList();});
-  $('#pantryList').querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{S.extraPantry.splice(+b.dataset.rm,1);persist(['extraPantry']);renderPantry();});
+  $('#pantryList').querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{S.extraPantry.splice(+b.dataset.rm,1);persist(['extraPantry']);renderPantry();renderList();});
 }
 function renderDeals(){
   $('#dealGroups').innerHTML=W.deals.map(g=>`<div style="display:flex;flex-direction:column;gap:8px"><div class="row" style="gap:8px"><span class="eyebrow">${esc(g.label)}</span>${g.badge?`<span class="badge ${g.badgeClass||'ok'}">${esc(g.badge)}</span>`:''}</div><div class="list">${g.items.map((d,i)=>{const k=g.key+':'+i;return`<div class="li"><span class="lead-ic"><span class="ms">${d.badge?'sell':'storefront'}</span></span><div class="grow"><div class="t">${esc(d.t)}</div><div class="s">${esc(d.s||'')}</div></div>${d.badge?`<span class="badge deal">${esc(d.badge)}</span>`:''}<label class="sw"><input type="checkbox" data-deal="${k}" ${S.deals[k]?'checked':''} aria-label="Use ${esc(d.t)}"><span class="tr"></span><span class="hd"></span></label></div>`;}).join('')}</div></div>`).join('');
@@ -583,7 +583,14 @@ async function saveBudget(n,h){
   }catch(e){err.textContent=e.message;err.hidden=false;}
   finally{btn.disabled=false;}
 }
-const inPantry=it=>!!(it.pk&&S.pantry[it.pk])||!!(S.build&&S.build.skip.includes(it.t));   // covered already: pantry toggle or the planner skipped it
+/* Free-text pantry items ("Frozen broccoli", "Half a jar of hummus") cover grocery lines by name, in English or
+   Spanish: every content word of the item (after a small EN→ES food dictionary) has to appear in the line title. */
+const EN_ES={broccoli:'brocoli',spinach:'espinaca',eggs:'huevos',egg:'huevos',chicken:'pollo',tuna:'atun',yogurt:'yoghurt',yoghurt:'yoghurt',milk:'leche',peanut:'mani',butter:'mantequilla',pita:'pita',bread:'pan',lemon:'limon',lemons:'limon',potato:'papa',potatoes:'papa',onion:'cebolla',onions:'cebolla',carrot:'zanahoria',carrots:'zanahoria',tomato:'tomate',tomatoes:'tomate',cucumber:'pepino',lettuce:'lechuga',banana:'platano',bananas:'platano',apple:'manzana',apples:'manzana',frozen:'congelad',chickpeas:'garbanzos',lentils:'lentejas',tahini:'tahini',salmon:'salmon',rice:'arroz',oats:'avena',zucchini:'zapallo',pepper:'pimenton',garlic:'ajo',ginger:'jengibre',veg:'',vegetables:'',mix:'',mixed:''};
+const NOISE=new Set(['a','an','the','of','de','del','la','el','los','las','y','and','half','full','jar','bag','box','tin','can','pack','container','bottle','some','about','left','open','opened','un','g','kg','ml','l','gr','x']);
+const norm=t=>String(t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9ñ ]+/g,' ');
+function itemWords(t){return norm(t.replace(/\([^)]*\)/g,' ')).split(' ').filter(w=>w&&!/^\d+$/.test(w)&&!NOISE.has(w)).map(w=>w in EN_ES?EN_ES[w]:w).filter(w=>w.length>=3);}
+function pantryCover(it){const line=norm(it.t);return S.extraPantry.find(x=>{const ws=itemWords(x);return ws.length&&ws.every(w=>line.includes(w.length>5?w.slice(0,5):w));})||null;}
+const inPantry=it=>!!(it.pk&&S.pantry[it.pk])||!!(S.build&&S.build.skip.includes(it.t))||!!pantryCover(it);   // covered already: pantry toggle, free-text pantry item, or the planner skipped it
 const included=it=>!inPantry(it)&&!S.removed[it.t];
 const lineOf=it=>{const a=S.build&&S.build.adjust.find(x=>x.t===it.t);return a?{q:a.q||it.q||'',p:a.p,adj:true}:{q:it.q||'',p:it.p,adj:false};};
 const allItems=()=>W.stores.flatMap(s=>W.groceries[s.key]||[]);
@@ -653,7 +660,7 @@ function renderList(){
   else{bd.textContent='In range';bd.className='badge ok';$('#budgetNote').textContent=B.custom?`Within your ${kk(B.max)} budget.`:B.min<B.max?`Within the ${kk(B.min)} to ${kk(B.max)} target.`:`Within the ${kk(B.max)} budget.`;}
   renderPriceStamp();
   $('#haveCount').textContent=`(${have.length}, saved ${clp(have.reduce((a,b)=>a+b.p,0))})`;
-  $('#haveList').innerHTML=have.map(it=>`<div class="meal"><span class="ms" style="color:var(--on-surface-variant)">check</span><div class="grow"><div class="mt" style="color:var(--on-surface-variant)">${esc(it.t)}</div></div><span class="price" style="color:var(--on-surface-variant);text-decoration:line-through">${clp(it.p)}</span></div>`).join('')||'<p class="muted" style="padding:0 16px 12px">Nothing yet. Toggle items in the pantry check.</p>';
+  $('#haveList').innerHTML=have.map(it=>`<div class="meal"><span class="ms" style="color:var(--on-surface-variant)">check</span><div class="grow"><div class="mt" style="color:var(--on-surface-variant)">${esc(it.t)}</div>${(c=>c?`<div class="mm">you have: ${esc(c)}</div>`:'')(pantryCover(it))}</div><span class="price" style="color:var(--on-surface-variant);text-decoration:line-through">${clp(it.p)}</span></div>`).join('')||'<p class="muted" style="padding:0 16px 12px">Nothing yet. Toggle items in the pantry check.</p>';
   $('#removedWrap').hidden=!removed.length;
   $('#removedCount').textContent=`(${removed.length}, saved ${clp(removed.reduce((a,b)=>a+lineOf(b).p,0))})`;
   $('#removedList').innerHTML=removed.map(it=>`<div class="meal"><span class="ms" style="color:var(--on-surface-variant)">remove_shopping_cart</span><div class="grow"><div class="mt" style="color:var(--on-surface-variant)">${esc(it.t)}</div></div><span class="price" style="color:var(--on-surface-variant);text-decoration:line-through">${clp(lineOf(it).p)}</span><button class="btn text" data-restore="${esc(it.t)}" style="height:32px;padding:0 10px;white-space:nowrap">Add back</button></div>`).join('');
@@ -827,12 +834,12 @@ $('#backBtn').onclick=()=>{const order=['home','pantry','deals','menu','list','c
 $('#startBtn').onclick=()=>go(S.step&&S.step!=='home'?S.step:'pantry');
 $('#resetBtn').onclick=()=>{const a=S.actuals;S=freshState();S.actuals=a;persist();renderAll();snack('Week reset, cart totals kept');};
 $('#scrim').onclick=closeSheet;
-$('#addItemBtn').onclick=()=>{const v=$('#addItem').value.trim();if(!v||v.length>80)return;S.extraPantry.push(v);$('#addItem').value='';persist(['extraPantry']);renderPantry();snack('Added to pantry');};
+$('#addItemBtn').onclick=()=>{const v=$('#addItem').value.trim();if(!v||v.length>80)return;S.extraPantry.push(v);$('#addItem').value='';persist(['extraPantry']);renderPantry();renderList();const n=allItems().filter(it=>pantryCover(it)===v).length;snack(n?`Added to pantry, ${n} line${n===1?'':'s'} dropped from the list`:'Added to pantry');};
 $('#addItem').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();$('#addItemBtn').click();}};
 
 /* ---------- Pantry photo ---------- */
 let photoItems=[];
-function knownNames(){return W.pantry.map(p=>p.t).concat(W.staples);}
+function knownNames(){return W.pantry.map(p=>p.t).concat(W.staples,allItems().map(i=>i.t)).slice(0,60);}
 function downscale(file,max){return new Promise((resolve,reject)=>{const img=new Image();const url=URL.createObjectURL(file);img.onload=()=>{URL.revokeObjectURL(url);const r=Math.min(1,max/Math.max(img.width,img.height));const c=document.createElement('canvas');c.width=Math.round(img.width*r);c.height=Math.round(img.height*r);c.getContext('2d').drawImage(img,0,0,c.width,c.height);resolve(c.toDataURL('image/jpeg',0.82));};img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('bad image'));};img.src=url;});}
 function renderPhotoList(){
   const L=$('#photoList');if(!photoItems.length){L.hidden=true;$('#photoActions').hidden=true;return;}
@@ -862,6 +869,7 @@ $('#photoKeep').onclick=()=>{
     const p=it.match&&W.pantry.find(x=>x.t===it.match);
     if(p){S.pantry[p.k]=true;matched++;}
     else if(it.match&&W.staples.includes(it.match)){/* staples are always on hand */}
+    else if(it.match&&allItems().some(x=>x.t===it.match)){if(!S.extraPantry.includes(it.match)){S.extraPantry.push(it.match);added++;}}   // the grocery line itself, so it is covered exactly
     else{const label=it.note?`${it.name} (${it.note})`:it.name;if(!S.extraPantry.includes(label)){S.extraPantry.push(label);added++;}}
   });
   photoItems=[];renderPhotoList();$('#photoHint').textContent='Snap another shelf, or carry on.';
