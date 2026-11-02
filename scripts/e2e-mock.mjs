@@ -126,9 +126,7 @@ t('swap sheet lists dinner pool', (await page.$$('#sheetOpts .opt')).length === 
 await click('#sheetOpts [data-pick="6"]'); await page.waitForTimeout(900)
 t('swap saved to server', db.state.menu && db.state.menu[0].d === 6)
 t('swap reflected in UI', (await page.textContent('#days details:first-child')).includes('congrio'))
-await click('[data-rate="0:d:1"]'); await page.waitForTimeout(300)
-t('rating POSTed', db.ratings.length === 1 && db.ratings[0].rating === 1 && db.ratings[0].slot === 'd')
-t('rating chip highlighted', await page.$eval('[data-rate="0:d:1"]', el => el.classList.contains('on')))
+t('no rating chips on the menu', (await page.$$('[data-rate]')).length === 0 && !(await page.textContent('#s-menu')).includes('not again'))
 
 await click('[data-go="list"]'); await page.waitForSelector('#s-list:not([hidden])')
 const storeHeads = await page.$$eval('#storeLists .eyebrow', els => els.map(e => e.textContent))
@@ -163,6 +161,22 @@ t('budget survives a reload (comes back from /api/week)', (await page.textConten
 await click('[data-nav="list"]'); await page.waitForSelector('#s-list:not([hidden])')
 await click('[data-buy="Pollo Entero Seara 2,2 kg"]'); await page.waitForTimeout(900)
 t('bought tick saved', db.state.bought && db.state.bought['Pollo Entero Seara 2,2 kg'] === true)
+// Removing a line: it leaves the store list and the total, lands under "Removed this week", and can come back
+const totalBefore = await page.textContent('#total')
+t('removed section hidden while nothing is removed', await page.$eval('#removedWrap', el => el.hidden))
+await click('[data-remove="Pollo Entero Seara 2,2 kg"]'); await page.waitForTimeout(900)
+t('removed item saved to server', db.state.removed && db.state.removed['Pollo Entero Seara 2,2 kg'] === true)
+t('removed item cleared from bought', db.state.bought['Pollo Entero Seara 2,2 kg'] === undefined)
+t('removed item gone from the store list', !(await page.textContent('#storeLists')).includes('Pollo Entero Seara'))
+t('total drops after removing', (await page.textContent('#total')) !== totalBefore)
+t('removed item listed with add back', !(await page.$eval('#removedWrap', el => el.hidden)) && (await page.textContent('#removedList')).includes('Pollo Entero Seara') && (await page.textContent('#removedCount')).includes('1,'))
+t('removed item left out of the message', !(await page.textContent('#preview')).includes('Pollo Entero Seara'))
+await page.reload(); await page.waitForSelector('#s-list:not([hidden])')   // the hash brings it back to the list
+t('removal survives a reload', !(await page.textContent('#storeLists')).includes('Pollo Entero Seara') && (await page.textContent('#removedList')).includes('Pollo Entero Seara'))
+await page.$eval('#removedWrap', el => el.open = true)
+await click('[data-restore="Pollo Entero Seara 2,2 kg"]'); await page.waitForTimeout(900)
+t('add back restores the line and the total', (await page.textContent('#storeLists')).includes('Pollo Entero Seara') && (await page.textContent('#total')) === totalBefore && db.state.removed['Pollo Entero Seara 2,2 kg'] === undefined)
+t('removed section hidden again', await page.$eval('#removedWrap', el => el.hidden))
 
 await click('[data-go="cook"]'); await page.waitForSelector('#s-cook:not([hidden])')
 t('timeline steps rendered', (await page.$$('#timeline .tli')).length === seed.cook.timeline.length)

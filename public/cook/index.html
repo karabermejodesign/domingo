@@ -220,10 +220,6 @@ h3{font-size:14px;font-weight:500;margin:0}
 .msg{background:var(--surface-container-highest);border-radius:12px 12px 12px 4px;padding:12px 14px;font-size:13px;white-space:pre-wrap;line-height:1.5;max-height:260px;overflow:auto}
 code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
-.rate{display:flex;gap:6px;padding:0 16px 10px 56px;flex-wrap:wrap}
-.rate button{height:28px;padding:0 10px;border-radius:14px;border:1px solid var(--outline);background:transparent;font:500 12px var(--font-body);color:var(--on-surface-variant);cursor:pointer}
-.rate button.on{background:var(--secondary-container);color:var(--on-secondary-container);border-color:transparent}
-.rate .who{font-size:11px;color:var(--on-surface-variant);align-self:center}
 </style>
 <style>
 :root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -305,7 +301,6 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12p
         <p class="muted" style="margin:0">Tap the swap icon on any meal to see alternatives that reuse the same base ingredients.</p>
       </div>
       <div id="days" style="display:flex;flex-direction:column;gap:8px"></div>
-      <p class="muted" style="margin:0">Rate a meal after you eat it: again, fine, or not again. Both of you can rate; it feeds next week's swaps.</p>
       <div class="row between"><button class="btn text" data-go="deals">Back</button><button class="btn filled" data-go="list">Approve menu<span class="ms">check</span></button></div>
     </section>
 
@@ -319,6 +314,7 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12p
       </div>
       <div id="storeLists" style="display:flex;flex-direction:column;gap:16px"></div>
       <details class="day"><summary><span class="ms chev">expand_more</span><span class="grow">Already have <span class="muted" id="haveCount"></span></span></summary><div id="haveList"></div></details>
+      <details class="day" id="removedWrap" hidden><summary><span class="ms chev">expand_more</span><span class="grow">Removed this week <span class="muted" id="removedCount"></span></span></summary><div id="removedList"></div></details>
       <div class="row between"><button class="btn text" data-go="menu">Back</button><button class="btn filled" data-go="cook">Cook plan<span class="ms">arrow_forward</span></button></div>
     </section>
 
@@ -348,7 +344,7 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12p
       <div class="row between"><button class="btn text" data-go="cook">Back</button><button class="btn filled" id="sendBtn"><span class="ms">send</span><span id="sendLbl">Send</span></button></div>
       <div class="card" id="doneCard" hidden>
         <div class="row"><span class="ms fill" style="color:var(--primary)">check_circle</span><h3 class="grow">Week planned</h3></div>
-        <p class="muted" style="margin:0">Next Saturday the planner starts from this week's list and asks what's left. Rate meals as you eat them so the swaps get smarter.</p>
+        <p class="muted" style="margin:0">Next Saturday the planner starts from this week's list and asks what's left.</p>
         <button class="btn tonal" data-go="home" style="align-self:flex-start">Back to start</button>
       </div>
     </section>
@@ -385,12 +381,10 @@ const STEPS=[
  {id:'send',t:'Send',s:'Links to the exact products',ic:'send'}];
 const TITLES={home:'Sunday Prep',pantry:'Pantry check',deals:'Deals',menu:'Menu',list:'Grocery list',cook:'Cook plan',send:'Send'};
 const TOOL={oven:['oven_gen','Oven'],tmx:['blender','Thermomix'],af:['air','Air fryer'],stove:['skillet','Stove']};
-const RATE=[[1,'again'],[2,'fine'],[3,'not again']];
 
 let W=null;        // plan (from /api/week)
 let S=null;        // per-week state (saved to /api/week)
 let weekId=null;
-let ratings=[];    // from /api/rate
 let SET={};        // household settings (budget) from /api/week, saved via /api/settings
 let me=null;       // user id
 let current='home';
@@ -460,7 +454,7 @@ window.addEventListener('pagehide',()=>{if(Object.keys(dirty).length&&weekId&&se
 function freshState(){
   const pantry={};W.pantry.forEach(p=>pantry[p.k]=!!p.on);
   const deals={};W.deals.forEach(g=>g.items.forEach((d,i)=>deals[g.key+':'+i]=!!d.on));
-  return{pantry,extraPantry:[],deals,menu:JSON.parse(JSON.stringify(W.menu)),bought:{},sent:false,step:'home',build:null};
+  return{pantry,extraPantry:[],deals,menu:JSON.parse(JSON.stringify(W.menu)),bought:{},removed:{},sent:false,step:'home',build:null};
 }
 function normalise(st){
   const f=freshState();const s=Object.assign({},f,st||{});
@@ -468,6 +462,7 @@ function normalise(st){
   if(!Array.isArray(s.menu)||s.menu.length!==7)s.menu=f.menu;
   if(!Array.isArray(s.extraPantry))s.extraPantry=[];if(!s.bought||typeof s.bought!=='object')s.bought={};
   if(!s.build||typeof s.build!=='object'||!Array.isArray(s.build.skip))s.build=null;else if(!Array.isArray(s.build.adjust))s.build.adjust=[];
+  if(!s.removed||typeof s.removed!=='object')s.removed={};
   return s;
 }
 async function loadWeek(){
@@ -475,7 +470,6 @@ async function loadWeek(){
   if(r.status===401){signOut();return false;}
   if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||('HTTP '+r.status));}
   const j=await r.json();W=j.plan;weekId=j.weekId;S=normalise(j.state);SET=j.settings&&typeof j.settings==='object'?j.settings:{};
-  try{const rr=await authFetch('/api/rate?weekId='+encodeURIComponent(weekId));if(rr.ok)ratings=(await rr.json()).ratings||[];}catch(_){}
   return true;
 }
 
@@ -516,23 +510,18 @@ function renderDeals(){
   document.querySelectorAll('input[data-deal]').forEach(i=>i.onchange=()=>{S.deals[i.dataset.deal]=i.checked;persist(['deals']);snack(i.checked?'Menu will favour this deal':'Deal ignored this week');});
 }
 function dayTotals(dy){const b=W.meals.b[dy.b],l=W.meals.l[dy.l],d=W.meals.d[dy.d];return{k:b[1]+l[1]+d[1],kc:b[2]+l[2]+d[2],t:b[3]+l[3]+d[3],tc:b[4]+l[4]+d[4]};}
-function myRating(day,slot){const r=ratings.find(x=>x.day===day&&x.slot===slot&&x.user_id===me);return r?r.rating:0;}
-function otherRating(day,slot){const r=ratings.find(x=>x.day===day&&x.slot===slot&&x.user_id!==me);return r?r.rating:0;}
 function renderMenu(){
   let sk=0,st=0,skc=0,stc=0;
   const ph=weekPhase(),openDay=ph.key==='eat'?ph.day:0,mon=weekMonday();
   $('#days').innerHTML=S.menu.map((dy,i)=>{const tt=dayTotals(dy);sk+=tt.k;st+=tt.t;skc+=tt.kc;stc+=tt.tc;
-   const row=(slot,pool,idx)=>{const m=W.meals[pool][idx];const mine=myRating(i,pool),other=otherRating(i,pool);
-     return`<div class="meal"><span class="slot">${slot}</span><div class="grow"><div class="mt">${esc(m[0])}</div><div class="mm"><b>${m[1]} g</b> · ${m[2]} kcal &nbsp;|&nbsp; <b>${m[3]} g</b> · ${m[4]} kcal</div></div><button class="iconbtn" data-swap="${i}:${pool}" aria-label="Swap ${slot}"><span class="ms">swap_horiz</span></button></div><div class="rate">${RATE.map(([v,l])=>`<button data-rate="${i}:${pool}:${v}" class="${mine===v?'on':''}">${l}</button>`).join('')}${other?`<span class="who">· other: ${RATE[other-1][1]}</span>`:''}</div>`;};
+   const row=(slot,pool,idx)=>{const m=W.meals[pool][idx];
+     return`<div class="meal"><span class="slot">${slot}</span><div class="grow"><div class="mt">${esc(m[0])}</div><div class="mm"><b>${m[1]} g</b> · ${m[2]} kcal &nbsp;|&nbsp; <b>${m[3]} g</b> · ${m[4]} kcal</div></div><button class="iconbtn" data-swap="${i}:${pool}" aria-label="Swap ${slot}"><span class="ms">swap_horiz</span></button></div>`;};
    return`<details class="day" ${i===openDay?'open':''}><summary><span class="dn">${esc(W.days[i])}<span class="muted" style="font-weight:400;font-size:11px;display:block">${addDays(mon,i).getDate()}</span></span>${ph.key==='eat'&&i===ph.day?'<span class="badge ok">Today</span>':''}<span class="grow pro">Kara <b style="color:var(--on-surface)">${tt.k} g</b> · ${tt.kc} kcal &nbsp;·&nbsp; Tomas <b style="color:var(--on-surface)">${tt.t} g</b> · ${tt.tc} kcal</span><span class="ms chev">expand_more</span></summary>${row('B','b',dy.b)}${row('L','l',dy.l)}${row('D','d',dy.d)}</details>`;}).join('');
   $('#avgK').textContent=`${Math.round(sk/7)} g protein · ${Math.round(skc/7).toLocaleString('es-CL')} kcal from meals`;
   $('#avgT').textContent=`${Math.round(st/7)} g protein · ${Math.round(stc/7).toLocaleString('es-CL')} kcal`;
   const ok=sk/7>=W.targets.kMin&&st/7>=W.targets.tMin;$('#menuOk').textContent=ok?'On target':'Below target';$('#menuOk').className='badge '+(ok?'ok':'warn');
   renderBuildRow();
   document.querySelectorAll('[data-swap]').forEach(b=>b.onclick=e=>{e.preventDefault();openSwap(b.dataset.swap);});
-  document.querySelectorAll('[data-rate]').forEach(b=>b.onclick=async()=>{const [d,slot,v]=b.dataset.rate.split(':');const meal=W.meals[slot][S.menu[+d][slot]][0];
-    ratings=ratings.filter(x=>!(x.day===+d&&x.slot===slot&&x.user_id===me)).concat([{day:+d,slot,meal,rating:+v,user_id:me}]);renderMenu();
-    try{const r=await authFetch('/api/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({weekId,day:+d,slot,meal,rating:+v})});if(!r.ok)throw 0;snack('Rated');}catch(_){snack('Could not save the rating');}});
 }
 function openSwap(key){
   const [i,pool]=key.split(':');const cur=S.menu[i][pool];
@@ -573,7 +562,8 @@ async function saveBudget(n){
   }catch(e){err.textContent=e.message;err.hidden=false;}
   finally{btn.disabled=false;}
 }
-const included=it=>!(it.pk&&S.pantry[it.pk])&&!(S.build&&S.build.skip.includes(it.t));
+const inPantry=it=>!!(it.pk&&S.pantry[it.pk])||!!(S.build&&S.build.skip.includes(it.t));   // covered already: pantry toggle or the planner skipped it
+const included=it=>!inPantry(it)&&!S.removed[it.t];
 const lineOf=it=>{const a=S.build&&S.build.adjust.find(x=>x.t===it.t);return a?{q:a.q||it.q||'',p:a.p,adj:true}:{q:it.q||'',p:it.p,adj:false};};
 const allItems=()=>W.stores.flatMap(s=>W.groceries[s.key]||[]);
 
@@ -623,12 +613,12 @@ function weekPhase(){
 }
 function markStore(key,on){(W.groceries[key]||[]).filter(included).forEach(it=>S.bought[it.t]=!!on);persist(['bought']);renderAll();snack(on?'Marked as ordered':'Order reopened');}
 function renderList(){
-  const row=it=>{const L=lineOf(it);return`<div class="li ${S.bought[it.t]?'done':''}"><span class="cb ${S.bought[it.t]?'on':''}" role="checkbox" aria-checked="${!!S.bought[it.t]}" tabindex="0" data-buy="${esc(it.t)}"><span class="ms">check</span></span><div class="grow"><div class="t"><a href="${esc(it.pUrl||it.url)}" target="_blank" rel="noopener">${esc(it.t)}</a></div><div class="s">${esc(L.q)}${L.adj?' · <span class="badge est">trimmed</span>':''}${it.deal?` · <span class="badge deal">${esc(it.promo||'Deal')}</span>`:''}${it.est?' · <span class="badge est">estimate</span>':''}${it.prev?` · <span class="muted">was ${clp(it.prev)}</span>`:''}</div></div><span class="price">${clp(L.p)}</span></div>`;};
+  const row=it=>{const L=lineOf(it);return`<div class="li ${S.bought[it.t]?'done':''}"><span class="cb ${S.bought[it.t]?'on':''}" role="checkbox" aria-checked="${!!S.bought[it.t]}" tabindex="0" data-buy="${esc(it.t)}"><span class="ms">check</span></span><div class="grow"><div class="t"><a href="${esc(it.pUrl||it.url)}" target="_blank" rel="noopener">${esc(it.t)}</a></div><div class="s">${esc(L.q)}${L.adj?' · <span class="badge est">trimmed</span>':''}${it.deal?` · <span class="badge deal">${esc(it.promo||'Deal')}</span>`:''}${it.est?' · <span class="badge est">estimate</span>':''}${it.prev?` · <span class="muted">was ${clp(it.prev)}</span>`:''}</div></div><span class="price">${clp(L.p)}</span><button class="iconbtn" data-remove="${esc(it.t)}" aria-label="Remove ${esc(it.t)} from the list"><span class="ms">close</span></button></div>`;};
   let tot=0;
   $('#storeLists').innerHTML=W.stores.map(s=>{const items=(W.groceries[s.key]||[]).filter(included);const sub=items.reduce((a,b)=>a+lineOf(b).p,0);tot+=sub;if(!items.length)return'';
     const st=storeStatus(s);
     return`<div style="display:flex;flex-direction:column;gap:8px"><div class="row" style="gap:8px;flex-wrap:wrap"><span class="eyebrow">${esc(s.label)} · ${esc(st.when)}</span>${st.badge?`<span class="badge ${st.cls}">${esc(st.badge)}</span>`:s.badge?`<span class="badge deal">${esc(s.badge)}</span>`:s.sub?`<span class="muted">${esc(s.sub)}</span>`:''}<span class="price grow" style="text-align:right">${clp(sub)}</span></div><div class="list">${items.map(row).join('')}</div><div class="row" style="gap:8px;flex-wrap:wrap">${s.note?`<p class="muted grow" style="margin:0">${esc(s.note)}</p>`:'<span class="grow"></span>'}<button class="btn text" data-mark="${esc(s.key)}" data-on="${st.kind==='done'?0:1}">${st.kind==='done'?'Reopen order':'Mark ordered'}</button></div></div>`;}).join('');
-  const have=allItems().filter(it=>!included(it));
+  const have=allItems().filter(inPantry),removed=allItems().filter(it=>!inPantry(it)&&S.removed[it.t]);
   const B=budget();
   $('#total').textContent=clp(tot);$('#budgetOf').innerHTML=`of ${clp(B.max)} <span class="ms" style="font-size:14px;vertical-align:-2px">edit</span>`;
   const pct=Math.min(100,tot/B.max*100);$('#budgetBar').querySelector('i').style.width=pct+'%';$('#budgetBar').classList.toggle('over',tot>B.max);
@@ -639,6 +629,11 @@ function renderList(){
   renderPriceStamp();
   $('#haveCount').textContent=`(${have.length}, saved ${clp(have.reduce((a,b)=>a+b.p,0))})`;
   $('#haveList').innerHTML=have.map(it=>`<div class="meal"><span class="ms" style="color:var(--on-surface-variant)">check</span><div class="grow"><div class="mt" style="color:var(--on-surface-variant)">${esc(it.t)}</div></div><span class="price" style="color:var(--on-surface-variant);text-decoration:line-through">${clp(it.p)}</span></div>`).join('')||'<p class="muted" style="padding:0 16px 12px">Nothing yet. Toggle items in the pantry check.</p>';
+  $('#removedWrap').hidden=!removed.length;
+  $('#removedCount').textContent=`(${removed.length}, saved ${clp(removed.reduce((a,b)=>a+lineOf(b).p,0))})`;
+  $('#removedList').innerHTML=removed.map(it=>`<div class="meal"><span class="ms" style="color:var(--on-surface-variant)">remove_shopping_cart</span><div class="grow"><div class="mt" style="color:var(--on-surface-variant)">${esc(it.t)}</div></div><span class="price" style="color:var(--on-surface-variant);text-decoration:line-through">${clp(lineOf(it).p)}</span><button class="btn text" data-restore="${esc(it.t)}" style="height:32px;padding:0 10px;white-space:nowrap">Add back</button></div>`).join('');
+  document.querySelectorAll('[data-remove]').forEach(b=>b.onclick=e=>{e.preventDefault();const t=b.dataset.remove;S.removed[t]=true;delete S.bought[t];persist(['removed','bought']);renderList();renderHome();renderCook();snack('Removed from the list');});
+  document.querySelectorAll('[data-restore]').forEach(b=>b.onclick=()=>{delete S.removed[b.dataset.restore];persist(['removed']);renderList();renderHome();renderCook();snack('Back on the list');});
     document.querySelectorAll('[data-buy]').forEach(c=>{const f=()=>{S.bought[c.dataset.buy]=!S.bought[c.dataset.buy];persist(['bought']);renderList();renderHome();renderCook();};c.onclick=f;c.onkeydown=e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();f();}};});
   document.querySelectorAll('[data-mark]').forEach(b=>b.onclick=()=>markStore(b.dataset.mark,b.dataset.on==='1'));
   renderSend();
@@ -686,17 +681,16 @@ function messageText(){
   const groups=W.stores.map(s=>{const items=(W.groceries[s.key]||[]).filter(included);if(!items.length)return'';
     const st=storeStatus(s);const when=st.kind==='done'?'ordered':st.kind==='late'?`order today (was ${s.day})`:st.kind==='today'?'order today':`order ${s.day}`;
     return`${s.label.toUpperCase()}, ${when}${s.badge?' ('+s.badge+')':''}\n`+items.map(it=>{const L=lineOf(it);return`• ${it.t} · ${L.q}  ${clp(L.p)}\n  ${it.url}`;}).join('\n');}).filter(Boolean).join('\n\n');
-  const have=allItems().filter(it=>!included(it)).map(i=>i.t.split(' ')[0]).concat(S.extraPantry);
+  const have=allItems().filter(inPantry).map(i=>i.t.split(' ')[0]).concat(S.extraPantry);
   return`Groceries, ${W.week.label} · ${clp(tot)} (budget ${kk(budget().max)})\n\n${groups}\n\nAlready have: ${have.join(', ')||'nothing'}\n\nCook plan: ${location.origin}/#cook`;
 }
 function renderSend(){$('#preview').textContent=messageText();}
 
-/* ---------- Build menu: Gemini re-plans from pantry, deals, budget and ratings ---------- */
+/* ---------- Build menu: Gemini re-plans from pantry, deals and budget (ratings UI is off for now) ---------- */
 let building=false,buildErr='';
 function buildHash(){
   const on=Object.keys(S.pantry).filter(k=>S.pantry[k]).sort(),dl=Object.keys(S.deals).filter(k=>S.deals[k]).sort();
-  const rt=ratings.map(r=>`${r.day}${r.slot}${r.rating}`).sort();
-  const str=[on.join(','),S.extraPantry.map(x=>x.toLowerCase()).sort().join('|'),dl.join(','),budget().max,rt.join(',')].join('#');
+  const str=[on.join(','),S.extraPantry.map(x=>x.toLowerCase()).sort().join('|'),dl.join(','),budget().max].join('#');
   let h=5381;for(let i=0;i<str.length;i++)h=((h<<5)+h+str.charCodeAt(i))|0;return (h>>>0).toString(36);
 }
 function buildStale(){return !S.build||S.build.hash!==buildHash();}
