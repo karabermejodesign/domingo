@@ -6,7 +6,7 @@ import { chromium } from '/opt/npm-tools/node_modules/playwright/index.mjs'
 
 const html = await readFile(new URL('../public/cook/index.html', import.meta.url), 'utf8')
 const seed = JSON.parse(await readFile(new URL('../src/data/seed-week.json', import.meta.url), 'utf8'))
-const db = { state: {}, ratings: [], patches: 0 }
+const db = { state: {}, ratings: [], patches: 0, settings: {} }
 const TOKEN = 'tok-abc'
 
 const server = http.createServer(async (req, res) => {
@@ -27,10 +27,11 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/auth/v1/user') return authed ? json(200, { id: 'u1' }) : json(401, {})
   if (!authed) return json(401, { error: 'Sign in to use this' })
-  if (url.pathname === '/api/week' && req.method === 'GET') return json(200, { weekId: seed.week.id, label: seed.week.label, plan: seed, state: db.state })
+  if (url.pathname === '/api/week' && req.method === 'GET') return json(200, { weekId: seed.week.id, label: seed.week.label, plan: seed, state: db.state, settings: db.settings })
   if (url.pathname === '/api/week' && req.method === 'PATCH') { const b = JSON.parse(body); Object.assign(db.state, b.state); db.patches++; return json(200, { ok: true }) }
   if (url.pathname === '/api/rate' && req.method === 'GET') return json(200, { ratings: db.ratings })
   if (url.pathname === '/api/pantry-photo' && req.method === 'POST') { const b = JSON.parse(body); db.photo = { bytes: b.image.length, known: b.known }; return json(200, { items: [{ name: 'Eggs', match: 'Eggs', note: 'about 6' }, { name: 'Half a jar of hummus', match: null }, { name: 'Rice', match: 'Rice' }] }) }
+  if (url.pathname === '/api/settings' && req.method === 'PATCH') { const b = JSON.parse(body); if (b.budget === null) delete db.settings.budget; else if (Number.isInteger(b.budget) && b.budget >= 20000) db.settings.budget = { max: b.budget }; else return json(400, { error: 'budget must be a whole number between 20000 and 2000000 CLP' }); return json(200, { ok: true, settings: db.settings }) }
   if (url.pathname === '/api/rate' && req.method === 'POST') { db.ratings.push(JSON.parse(body)); return json(200, { ok: true }) }
   json(404, { error: 'nope' })
 })
@@ -111,6 +112,26 @@ t('peanut butter under Already have', (await page.textContent('#haveList')).incl
 const links = await page.$$eval('#storeLists a', as => as.map(a => a.href))
 t('every grocery line has a store link', links.length > 0 && links.every(h => /^https:\/\/(super\.lider\.cl|www\.jumbo\.cl|www\.aqualitysoluciones\.cl|juanesparraguito\.com)/.test(h)))
 t('budget badge in range', ['In range'].includes(await page.textContent('#budgetBadge')) || (await page.textContent('#budgetBadge')).includes('under'))
+// Budget setting: tap the "of $X" on the list, save a number, see it everywhere; then back to the plan default
+t('list shows the plan default budget', (await page.textContent('#budgetOf')).includes('130.000'))
+await click('#budgetOf'); await page.waitForSelector('#budgetForm')
+t('budget sheet opens with the current number', (await page.inputValue('#budgetIn')) === '130.000')
+await page.fill('#budgetIn', '1000'); await click('#budgetSave'); await page.waitForSelector('#budgetErr:not([hidden])')
+t('too-small budget rejected client-side', (await page.textContent('#budgetErr')).includes('20.000'))
+await page.fill('#budgetIn', '85000'); await click('#budgetSave'); await page.waitForTimeout(600)
+t('budget saved to server', db.settings.budget && db.settings.budget.max === 85000)
+t('list card uses the new budget', (await page.textContent('#budgetOf')).includes('85.000'))
+t('over budget now flagged', (await page.textContent('#budgetBadge')) === 'Over budget')
+await click('[data-nav="home"]'); await page.waitForSelector('#s-home:not([hidden])')
+t('home badge shows your budget', (await page.textContent('#budgetBtn')).includes('Budget 85k') && (await page.textContent('#budgetBtn')).includes('yours'))
+await click('#budgetBtn'); await page.waitForSelector('#budgetDefault')
+await click('#budgetDefault'); await page.waitForTimeout(600)
+t('plan default restored', !db.settings.budget && (await page.textContent('#budgetBtn')).includes('110k to 130k'))
+await page.reload(); await page.waitForSelector('#s-home:not([hidden])')
+await click('#budgetBtn'); await page.waitForSelector('#budgetForm'); await page.fill('#budgetIn', '120000'); await click('#budgetSave'); await page.waitForTimeout(600)
+await page.reload(); await page.waitForSelector('#s-home:not([hidden])')
+t('budget survives a reload (comes back from /api/week)', (await page.textContent('#budgetBtn')).includes('Budget 120k'))
+await click('[data-nav="list"]'); await page.waitForSelector('#s-list:not([hidden])')
 await click('[data-buy="Pollo Entero Seara 2,2 kg"]'); await page.waitForTimeout(900)
 t('bought tick saved', db.state.bought && db.state.bought['Pollo Entero Seara 2,2 kg'] === true)
 
@@ -124,6 +145,7 @@ await click('[data-go="send"]'); await page.waitForSelector('#s-send:not([hidden
 const preview = await page.textContent('#preview')
 t('preview groups by store with order day', preview.includes('AQUALITY, order Tuesday') && preview.includes('JUAN ESPARRAGUITO, order Wednesday'))
 t('preview includes product links', preview.includes('https://super.lider.cl/'))
+t('preview carries the custom budget', preview.includes('(budget 120k)'))
 t('preview lists Already have', preview.includes('Already have: Mantequilla'))
 await click('#sendBtn'); await page.waitForTimeout(300)
 t('WhatsApp without number asks for it', (await page.textContent('#snackTxt')).includes('number'))

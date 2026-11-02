@@ -6,6 +6,7 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { requireUser, signInRequired } from '../_lib/auth'
 import { rest } from '../_lib/supabase-rest'
+import { readSettings } from '../_lib/settings'
 
 export const maxDuration = 30
 export const dynamic = 'force-dynamic'
@@ -38,7 +39,8 @@ export async function GET(request: Request) {
   try {
     let week = await currentWeek()
     if (!week) week = await seedFirstWeek()
-    return Response.json({ weekId: week.week_id, label: week.label, plan: week.plan, state: week.state ?? {}, updatedAt: week.updated_at })
+    const settings = await readSettings().catch(() => ({}))   // settings are optional; the plan's defaults apply without them
+    return Response.json({ weekId: week.week_id, label: week.label, plan: week.plan, state: week.state ?? {}, settings, updatedAt: week.updated_at })
   } catch (err) {
     console.error('week GET', err instanceof Error ? err.message : err)
     return Response.json({ error: 'could not load the week' }, { status: 502 })

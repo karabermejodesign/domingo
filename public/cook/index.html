@@ -310,7 +310,7 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12p
     <section class="screen" id="s-list" hidden>
       <div class="card outl" id="budgetCard">
         <div class="row between"><h2>Grocery list</h2><span class="badge" id="budgetBadge"></span></div>
-        <div class="row between"><span class="big num" id="total"></span><span class="muted num" id="budgetOf"></span></div>
+        <div class="row between"><span class="big num" id="total"></span><button class="muted num" id="budgetOf" data-budget style="background:transparent;border:0;cursor:pointer;font:inherit;color:inherit;padding:0" aria-label="Change the weekly budget"></button></div>
         <div class="bar" id="budgetBar"><i></i></div>
         <p class="muted" style="margin:0" id="budgetNote"></p>
       </div>
@@ -388,6 +388,7 @@ let W=null;        // plan (from /api/week)
 let S=null;        // per-week state (saved to /api/week)
 let weekId=null;
 let ratings=[];    // from /api/rate
+let SET={};        // household settings (budget) from /api/week, saved via /api/settings
 let me=null;       // user id
 let current='home';
 
@@ -469,18 +470,30 @@ async function loadWeek(){
   const r=await authFetch('/api/week');
   if(r.status===401){signOut();return false;}
   if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||('HTTP '+r.status));}
-  const j=await r.json();W=j.plan;weekId=j.weekId;S=normalise(j.state);
+  const j=await r.json();W=j.plan;weekId=j.weekId;S=normalise(j.state);SET=j.settings&&typeof j.settings==='object'?j.settings:{};
   try{const rr=await authFetch('/api/rate?weekId='+encodeURIComponent(weekId));if(rr.ok)ratings=(await rr.json()).ratings||[];}catch(_){}
   return true;
 }
 
+/* ---------- Budget: the household setting wins over the plan's default ----------
+   Plans carry a target range (budgetMin to budget). A saved weekly budget replaces the top
+   number; the low end scales with it so "under" and "in range" keep meaning something. */
+function budget(){
+  const pm=+W.week.budget>0?+W.week.budget:130000,pn=+W.week.budgetMin>0&&+W.week.budgetMin<=pm?+W.week.budgetMin:pm;
+  const b=SET.budget&&+SET.budget.max>0?Math.round(+SET.budget.max):null;
+  if(!b)return{max:pm,min:pn,custom:false,def:pm};
+  return{max:b,min:Math.max(0,Math.round(b*(pn/pm)/1000)*1000),custom:true,def:pm};
+}
+const kk=n=>Math.round(n/1000)+'k';
+function budgetLabel(){const B=budget();return B.custom?`Budget ${kk(B.max)}`:B.min<B.max?`Budget ${kk(B.min)} to ${kk(B.max)}`:`Budget ${kk(B.max)}`;}
+
 /* ---------- Render ---------- */
 function renderHome(){
-  const ph=weekPhase();$('#weekLbl').textContent=W.week.label;$('#weekLead').textContent=ph.lead;
-  $('#targetBadges').innerHTML=`<span class="badge ok" style="background:var(--surface);color:var(--on-surface)">Budget ${Math.round(W.week.budgetMin/1000)}–${Math.round(W.week.budget/1000)}k</span><span class="badge ok" style="background:var(--surface);color:var(--on-surface)">Kara ${esc(W.targets.kara)} · Tomas ${esc(W.targets.tomas)}</span>`;
+  const ph=weekPhase(),B=budget();$('#weekLbl').textContent=W.week.label;$('#weekLead').textContent=ph.lead;
+  $('#targetBadges').innerHTML=`<button class="badge ok" id="budgetBtn" data-budget style="background:var(--surface);color:var(--on-surface);border:0;cursor:pointer;gap:4px;font-family:var(--font-body)" aria-label="Change the weekly budget">${budgetLabel()}${B.custom?' <span style="opacity:.6">· yours</span>':''}<span class="ms" style="font-size:14px">edit</span></button><span class="badge ok" style="background:var(--surface);color:var(--on-surface)">Kara ${esc(W.targets.kara)} · Tomas ${esc(W.targets.tomas)}</span>`;
   $('#homeSteps').innerHTML=STEPS.map((s,i)=>`<div class="li" role="button" tabindex="0" data-go="${s.id}"><span class="lead-ic"><span class="ms">${s.ic}</span></span><div class="grow"><div class="t">${i+1}. ${s.t}</div><div class="s">${s.s}</div></div><span class="ms" style="color:var(--on-surface-variant)">chevron_right</span></div>`).join('');
   const lw=W.lastWeek;
-  $('#lastWeekCard').innerHTML=lw?`<h3>Last week</h3><div class="row between"><span class="muted">Spent</span><span class="price">${clp(lw.spent)} of ${clp(W.week.budget)}</span></div><div class="bar"><i style="width:${Math.min(100,lw.spent/W.week.budget*100)}%"></i></div><div class="row between"><span class="muted">Avg protein</span><span class="price">K ${lw.avgK} g · T ${lw.avgT} g</span></div>${lw.note?`<div class="muted">${esc(lw.note)}</div>`:''}`:'';
+  $('#lastWeekCard').innerHTML=lw?`<h3>Last week</h3><div class="row between"><span class="muted">Spent</span><span class="price">${clp(lw.spent)} of ${clp(B.max)}</span></div><div class="bar"><i style="width:${Math.min(100,lw.spent/B.max*100)}%"></i></div><div class="row between"><span class="muted">Avg protein</span><span class="price">K ${lw.avgK} g · T ${lw.avgT} g</span></div>${lw.note?`<div class="muted">${esc(lw.note)}</div>`:''}`:'';
   $('#priceNote').textContent=W.week.pricesChecked||'';
   $('#startLbl').textContent=S.step&&S.step!=='home'?'Continue planning':'Start planning';
 }
@@ -523,7 +536,38 @@ function openSwap(key){
   $('#sheetOpts').querySelectorAll('[data-pick]').forEach(o=>o.onclick=()=>{S.menu[i][pool]=+o.dataset.pick;persist(['menu']);closeSheet();renderMenu();renderSend();snack('Swapped');});
   $('#scrim').hidden=false;$('#sheet').hidden=false;
 }
-function closeSheet(){$('#scrim').hidden=true;$('#sheet').hidden=true;}
+function closeSheet(){$('#scrim').hidden=true;$('#sheet').hidden=true;$('#sheet').setAttribute('aria-label','Swap meal');}
+
+/* ---------- Budget sheet: one number, saved for the household ---------- */
+function openBudget(){
+  const B=budget();
+  $('#sheet').setAttribute('aria-label','Weekly budget');$('#sheetTitle').textContent='Weekly budget';
+  $('#sheetOpts').innerHTML=`<form id="budgetForm" style="display:flex;flex-direction:column;gap:16px;padding:8px 0">
+    <div class="tf"><label for="budgetIn">Weekly budget, CLP</label><span style="color:var(--on-surface-variant)">$</span><input id="budgetIn" inputmode="numeric" autocomplete="off" value="${B.max}" aria-describedby="budgetHint"></div>
+    <p class="muted" id="budgetHint" style="margin:0">The grocery list and the "over budget" check use this number. ${B.custom?`The plan's own default is ${clp(B.def)}.`:`This week's plan suggests ${clp(B.def)}.`}</p>
+    <p class="muted" id="budgetErr" style="margin:0;color:var(--error)" hidden></p>
+    <div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn filled" type="submit" id="budgetSave"><span class="ms">check</span>Save</button>${B.custom?'<button class="btn text" type="button" id="budgetDefault">Use the plan default</button>':''}</div>
+  </form>`;
+  const inp=$('#budgetIn');
+  inp.oninput=()=>{const d=inp.value.replace(/\D/g,'');inp.value=d?(+d).toLocaleString('es-CL'):'';};inp.oninput();
+  $('#budgetForm').onsubmit=e=>{e.preventDefault();const n=+inp.value.replace(/\D/g,'');saveBudget(n);};
+  const d=$('#budgetDefault');if(d)d.onclick=()=>saveBudget(null);
+  $('#scrim').hidden=false;$('#sheet').hidden=false;setTimeout(()=>{inp.focus();inp.select();},50);
+}
+async function saveBudget(n){
+  const err=$('#budgetErr'),btn=$('#budgetSave');err.hidden=true;
+  if(n!==null&&(!Number.isInteger(n)||n<20000||n>2000000)){err.textContent='Enter a whole number between $20.000 and $2.000.000.';err.hidden=false;return;}
+  btn.disabled=true;
+  try{
+    const r=await authFetch('/api/settings',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({budget:n})});
+    if(r.status===401){signOut();return;}
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(j.error||'could not save');
+    SET=j.settings&&typeof j.settings==='object'?j.settings:(n===null?{}:{budget:{max:n}});
+    closeSheet();renderAll();snack(n===null?'Back to the plan default':`Budget set to ${clp(n)}`);
+  }catch(e){err.textContent=e.message;err.hidden=false;}
+  finally{btn.disabled=false;}
+}
 const included=it=>!(it.pk&&S.pantry[it.pk]);
 const allItems=()=>W.stores.flatMap(s=>W.groceries[s.key]||[]);
 
@@ -579,12 +623,13 @@ function renderList(){
     const st=storeStatus(s);
     return`<div style="display:flex;flex-direction:column;gap:8px"><div class="row" style="gap:8px;flex-wrap:wrap"><span class="eyebrow">${esc(s.label)} · ${esc(st.when)}</span>${st.badge?`<span class="badge ${st.cls}">${esc(st.badge)}</span>`:s.badge?`<span class="badge deal">${esc(s.badge)}</span>`:s.sub?`<span class="muted">${esc(s.sub)}</span>`:''}<span class="price grow" style="text-align:right">${clp(sub)}</span></div><div class="list">${items.map(row).join('')}</div><div class="row" style="gap:8px;flex-wrap:wrap">${s.note?`<p class="muted grow" style="margin:0">${esc(s.note)}</p>`:'<span class="grow"></span>'}<button class="btn text" data-mark="${esc(s.key)}" data-on="${st.kind==='done'?0:1}">${st.kind==='done'?'Reopen order':'Mark ordered'}</button></div></div>`;}).join('');
   const have=allItems().filter(it=>!included(it));
-  $('#total').textContent=clp(tot);$('#budgetOf').textContent=`of ${clp(W.week.budget)}`;
-  const pct=Math.min(100,tot/W.week.budget*100);$('#budgetBar').querySelector('i').style.width=pct+'%';$('#budgetBar').classList.toggle('over',tot>W.week.budget);
+  const B=budget();
+  $('#total').textContent=clp(tot);$('#budgetOf').innerHTML=`of ${clp(B.max)} <span class="ms" style="font-size:14px;vertical-align:-2px">edit</span>`;
+  const pct=Math.min(100,tot/B.max*100);$('#budgetBar').querySelector('i').style.width=pct+'%';$('#budgetBar').classList.toggle('over',tot>B.max);
   const bd=$('#budgetBadge');
-  if(tot>W.week.budget){bd.textContent='Over budget';bd.className='badge warn';$('#budgetNote').textContent=`${clp(tot-W.week.budget)} over. Swap the whole chicken for trutro corto or drop one yogurt.`;}
-  else if(tot<W.week.budgetMin){bd.textContent=`${clp(W.week.budgetMin-tot)} under`;bd.className='badge ok';$('#budgetNote').textContent='Room for snacks: nuts, extra fruit, a second peanut butter.';}
-  else{bd.textContent='In range';bd.className='badge ok';$('#budgetNote').textContent=`Within the ${Math.round(W.week.budgetMin/1000)}–${Math.round(W.week.budget/1000)}k target.`;}
+  if(tot>B.max){bd.textContent='Over budget';bd.className='badge warn';$('#budgetNote').textContent=`${clp(tot-B.max)} over. Swap the whole chicken for trutro corto or drop one yogurt.`;}
+  else if(tot<B.min){bd.textContent=`${clp(B.min-tot)} under`;bd.className='badge ok';$('#budgetNote').textContent='Room for snacks: nuts, extra fruit, a second peanut butter.';}
+  else{bd.textContent='In range';bd.className='badge ok';$('#budgetNote').textContent=B.custom?`Within your ${kk(B.max)} budget.`:B.min<B.max?`Within the ${kk(B.min)} to ${kk(B.max)} target.`:`Within the ${kk(B.max)} budget.`;}
   $('#haveCount').textContent=`(${have.length}, saved ${clp(have.reduce((a,b)=>a+b.p,0))})`;
   $('#haveList').innerHTML=have.map(it=>`<div class="meal"><span class="ms" style="color:var(--on-surface-variant)">check</span><div class="grow"><div class="mt" style="color:var(--on-surface-variant)">${esc(it.t)}</div></div><span class="price" style="color:var(--on-surface-variant);text-decoration:line-through">${clp(it.p)}</span></div>`).join('')||'<p class="muted" style="padding:0 16px 12px">Nothing yet. Toggle items in the pantry check.</p>';
     document.querySelectorAll('[data-buy]').forEach(c=>{const f=()=>{S.bought[c.dataset.buy]=!S.bought[c.dataset.buy];persist(['bought']);renderList();renderHome();renderCook();};c.onclick=f;c.onkeydown=e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();f();}};});
@@ -607,7 +652,7 @@ function messageText(){
     const st=storeStatus(s);const when=st.kind==='done'?'ordered':st.kind==='late'?`order today (was ${s.day})`:st.kind==='today'?'order today':`order ${s.day}`;
     return`${s.label.toUpperCase()}, ${when}${s.badge?' ('+s.badge+')':''}\n`+items.map(it=>`• ${it.t} · ${it.q}  ${clp(it.p)}\n  ${it.url}`).join('\n');}).filter(Boolean).join('\n\n');
   const have=allItems().filter(it=>!included(it)).map(i=>i.t.split(' ')[0]);
-  return`Groceries, ${W.week.label} · ${clp(tot)} (budget ${Math.round(W.week.budget/1000)}k)\n\n${groups}\n\nAlready have: ${have.join(', ')||'nothing'}\n\nCook plan: ${location.origin}/#cook`;
+  return`Groceries, ${W.week.label} · ${clp(tot)} (budget ${kk(budget().max)})\n\n${groups}\n\nAlready have: ${have.join(', ')||'nothing'}\n\nCook plan: ${location.origin}/#cook`;
 }
 function renderSend(){$('#preview').textContent=messageText();}
 
@@ -627,6 +672,7 @@ function go(id){
 }
 document.addEventListener('click',e=>{
   if(!W)return;
+  if(e.target.closest('[data-budget]')){openBudget();return;}
   const g=e.target.closest('[data-go]');if(g){go(g.dataset.go);return;}
   const n=e.target.closest('[data-nav]');if(n){go(n.dataset.nav);return;}
 });
