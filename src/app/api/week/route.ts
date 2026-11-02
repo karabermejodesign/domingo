@@ -1,4 +1,5 @@
-// GET  /api/week            -> the current week's plan + saved state (seeds the first week if the table is empty)
+// GET  /api/week            -> the current week's plan + saved state (seeds the first week if the table is empty),
+//                              plus `recent`: earlier weeks' cart totals (state.actuals) for the month card
 // PATCH /api/week           -> merge a partial state object into the current week's state
 // Both require a signed-in household member (requireUser at the top, never inside a branch).
 
@@ -13,13 +14,30 @@ export const dynamic = 'force-dynamic'
 
 type WeekRow = { week_id: string; label: string; plan: unknown; state: Record<string, unknown>; is_current: boolean; updated_at: string }
 
-const STATE_KEYS = new Set(['pantry', 'extraPantry', 'deals', 'menu', 'bought', 'removed', 'sent', 'step', 'build'])
+const STATE_KEYS = new Set(['pantry', 'extraPantry', 'deals', 'menu', 'bought', 'removed', 'sent', 'step', 'build', 'actuals'])
 const MAX_STATE_BYTES = 64 * 1024
 
 async function currentWeek(): Promise<WeekRow | null> {
   const res = await rest('cook_weeks?select=week_id,label,plan,state,is_current,updated_at&is_current=eq.true&limit=1')
   const rows = (await res.json()) as WeekRow[]
   return rows[0] ?? null
+}
+
+type RecentWeek = { id: string; start: string | null; actuals: Record<string, unknown> }
+
+// Earlier weeks that logged a cart total. Only what the month card needs: the week id (ISO week, from which
+// the client derives the Monday), the optional explicit start date, and state.actuals as saved from the receipts.
+async function recentWeeks(): Promise<RecentWeek[]> {
+  const res = await rest('cook_weeks?select=week_id,plan,state&is_current=eq.false&order=updated_at.desc&limit=8')
+  const rows = (await res.json()) as { week_id: string; plan: { week?: { start?: unknown } } | null; state: Record<string, unknown> | null }[]
+  const out: RecentWeek[] = []
+  for (const r of rows) {
+    const actuals = r.state?.actuals
+    if (!actuals || typeof actuals !== 'object' || !Object.keys(actuals).length) continue
+    const start = r.plan?.week?.start
+    out.push({ id: r.week_id, start: typeof start === 'string' ? start : null, actuals: actuals as Record<string, unknown> })
+  }
+  return out
 }
 
 async function seedFirstWeek(): Promise<WeekRow> {
@@ -40,7 +58,8 @@ export async function GET(request: Request) {
     let week = await currentWeek()
     if (!week) week = await seedFirstWeek()
     const settings = await readSettings().catch(() => ({}))   // settings are optional; the plan's defaults apply without them
-    return Response.json({ weekId: week.week_id, label: week.label, plan: week.plan, state: week.state ?? {}, settings, updatedAt: week.updated_at })
+    const recent = await recentWeeks().catch(() => [])          // so is the month history
+    return Response.json({ weekId: week.week_id, label: week.label, plan: week.plan, state: week.state ?? {}, settings, recent, updatedAt: week.updated_at })
   } catch (err) {
     console.error('week GET', err instanceof Error ? err.message : err)
     return Response.json({ error: 'could not load the week' }, { status: 502 })

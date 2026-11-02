@@ -6,7 +6,8 @@ import { chromium } from '/opt/npm-tools/node_modules/playwright/index.mjs'
 
 const html = await readFile(new URL('../public/cook/index.html', import.meta.url), 'utf8')
 const seed = JSON.parse(await readFile(new URL('../src/data/seed-week.json', import.meta.url), 'utf8'))
-const db = { state: {}, ratings: [], patches: 0, settings: {}, builds: 0, buildBody: null }
+const db = { state: {}, ratings: [], patches: 0, settings: {}, builds: 0, buildBody: null, receipts: 0, receiptBody: null,
+  recent: [{ id: '2026-W44', start: null, actuals: { lider: { total: 112400, plan: 91300, source: 'typed' } } }] }   // October: must stay out of November's card
 const TOKEN = 'tok-abc'
 
 const server = http.createServer(async (req, res) => {
@@ -27,11 +28,18 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/auth/v1/user') return authed ? json(200, { id: 'u1' }) : json(401, {})
   if (!authed) return json(401, { error: 'Sign in to use this' })
-  if (url.pathname === '/api/week' && req.method === 'GET') return json(200, { weekId: seed.week.id, label: seed.week.label, plan: db.plan || seed, state: db.state, settings: db.settings })
+  if (url.pathname === '/api/week' && req.method === 'GET') return json(200, { weekId: seed.week.id, label: seed.week.label, plan: db.plan || seed, state: db.state, settings: db.settings, recent: db.recent })
   if (url.pathname === '/api/week' && req.method === 'PATCH') { const b = JSON.parse(body); Object.assign(db.state, b.state); db.patches++; return json(200, { ok: true }) }
   if (url.pathname === '/api/rate' && req.method === 'GET') return json(200, { ratings: db.ratings })
   if (url.pathname === '/api/pantry-photo' && req.method === 'POST') { const b = JSON.parse(body); db.photo = { bytes: b.image.length, known: b.known }; return json(200, { items: [{ name: 'Eggs', match: 'Eggs', note: 'about 6' }, { name: 'Half a jar of hummus', match: null }, { name: 'Rice', match: 'Rice' }] }) }
-  if (url.pathname === '/api/settings' && req.method === 'PATCH') { const b = JSON.parse(body); if (b.budget === null) delete db.settings.budget; else if (Number.isInteger(b.budget) && b.budget >= 20000) db.settings.budget = { max: b.budget }; else return json(400, { error: 'budget must be a whole number between 20000 and 2000000 CLP' }); return json(200, { ok: true, settings: db.settings }) }
+  if (url.pathname === '/api/settings' && req.method === 'PATCH') { const b = JSON.parse(body)
+    if ('budget' in b) { if (b.budget === null) delete db.settings.budget; else if (Number.isInteger(b.budget) && b.budget >= 20000) db.settings.budget = { max: b.budget }; else return json(400, { error: 'budget must be a whole number between 20000 and 2000000 CLP' }) }
+    if ('household' in b) { if (b.household === null) delete db.settings.household; else if (Number.isInteger(b.household) && b.household >= 100000) db.settings.household = { month: b.household }; else return json(400, { error: 'household budget out of range' }) }
+    return json(200, { ok: true, settings: db.settings }) }
+  if (url.pathname === '/api/receipt' && req.method === 'POST') { const b = JSON.parse(body); db.receipts++; db.receiptBody = { store: b.store, images: b.images.length, lines: b.lines }
+    if (b.store === 'je') return json(200, { store: 'je', date: null, total: null, confidence: 'low', items: null })
+    const items = b.lines.map((t, i) => ({ name: t.toUpperCase(), price: i === 0 ? 6990 : 1000, match: t })).concat([{ name: 'PANALES HUGGIES XG 44 UN', price: 12990, match: null }, { name: 'LECHE NIDO 1+ 800 G', price: 7490, match: null }])
+    return json(200, { store: 'lider', date: '2026-10-31', total: items.reduce((a, i) => a + i.price, 0), confidence: 'high', items }) }
   if (url.pathname === '/api/prices' && req.method === 'POST') {
     db.priceCalls = (db.priceCalls || 0) + 1
     const plan = JSON.parse(JSON.stringify(db.plan || seed)); const l = plan.groceries.lider[0]; const before = seed.groceries.lider[0].p
@@ -68,12 +76,13 @@ await page.fill('#password', 'pw'); await click('#loginBtn')
 await page.waitForSelector('#s-home:not([hidden])')
 t('home renders after sign-in', (await page.textContent('#weekLbl')).includes('Week of'))
 t('session stored under cook_sess', !!(await page.evaluate(() => localStorage.getItem('cook_sess'))))
-t('six steps listed', (await page.$$('#homeSteps .li')).length === 6)
+t('five steps listed', (await page.$$('#homeSteps .li')).length === 5)
+t('month card invites a household budget until one is set', (await page.textContent('#monthCard')).includes('Set a household budget'))
 t('sign-out button visible', await page.isVisible('#outBtn'))
 
 await click('#startBtn'); await page.waitForSelector('#s-pantry:not([hidden])')
 t('start goes to pantry', (await page.textContent('#title')) === 'Pantry check')
-t('step label 1 of 6', (await page.textContent('#stepLbl')) === '1 of 6')
+t('step label 1 of 5', (await page.textContent('#stepLbl')) === '1 of 5')
 const pantryRows = (await page.$$('#pantryList .li')).length
 t('pantry rows from plan', pantryRows === seed.pantry.length)
 t('eggs toggle starts on', await page.isChecked('input[data-pk="eggs"]'))
@@ -170,7 +179,6 @@ t('removed item cleared from bought', db.state.bought['Pollo Entero Seara 2,2 kg
 t('removed item gone from the store list', !(await page.textContent('#storeLists')).includes('Pollo Entero Seara'))
 t('total drops after removing', (await page.textContent('#total')) !== totalBefore)
 t('removed item listed with add back', !(await page.$eval('#removedWrap', el => el.hidden)) && (await page.textContent('#removedList')).includes('Pollo Entero Seara') && (await page.textContent('#removedCount')).includes('1,'))
-t('removed item left out of the message', !(await page.textContent('#preview')).includes('Pollo Entero Seara'))
 await page.reload(); await page.waitForSelector('#s-list:not([hidden])')   // the hash brings it back to the list
 t('removal survives a reload', !(await page.textContent('#storeLists')).includes('Pollo Entero Seara') && (await page.textContent('#removedList')).includes('Pollo Entero Seara'))
 await page.$eval('#removedWrap', el => el.open = true)
@@ -184,36 +192,74 @@ t('hummus step mentions tahini', (await page.textContent('#timeline')).includes(
 t('no grams or ml in cook plan', !/\b\d+\s?(g|ml)\b/.test(await page.textContent('#timeline')))
 t('tool badges present', (await page.$$('#timeline .tool')).length >= 8)
 
-await click('[data-go="send"]'); await page.waitForSelector('#s-send:not([hidden])')
-const preview = await page.textContent('#preview')
-t('preview groups by store with order day', preview.includes('AQUALITY, order Tuesday') && preview.includes('JUAN ESPARRAGUITO, order Wednesday'))
-t('preview includes product links', preview.includes('https://super.lider.cl/'))
-t('preview carries the custom budget', preview.includes('(budget 120k)'))
-t('preview lists Already have incl. free-text pantry', preview.includes('Already have: Mantequilla') && preview.includes('Half a jar of hummus'))
-await click('#sendBtn'); await page.waitForTimeout(300)
-t('WhatsApp without number asks for it', (await page.textContent('#snackTxt')).includes('number'))
-await click('[data-ch="copy"]'); await click('#sendBtn'); await page.waitForTimeout(900)
-t('copy marks week as sent', db.state.sent === true && await page.isVisible('#doneCard'))
+t('no Send step anywhere', (await page.$$('[data-go="send"]')).length === 0 && !(await page.$('#s-send')))
+await click('#doneBtn'); await page.waitForTimeout(900)
+t('Week planned marks the week done on the cook screen', db.state.sent === true && await page.isVisible('#doneCard'))
+await page.reload(); await page.waitForSelector('#s-cook:not([hidden]), #s-home:not([hidden])')
+t('reload keeps session and lands on saved step', (await page.textContent('#title')) === 'Cook plan')
+// Copy list still exists on the grocery list and carries the store groups, links and budget
+await click('[data-nav="list"]'); await page.waitForSelector('#s-list:not([hidden])')
+await page.evaluate(() => { window.__copied = ''; navigator.clipboard.writeText = t => { window.__copied = t; return Promise.resolve() } })
+await click('#copyBtn'); await page.waitForTimeout(200)
+const copied = await page.evaluate(() => window.__copied)
+t('Copy list groups by store with order day and links', copied.includes('AQUALITY, order Tuesday') && copied.includes('JUAN ESPARRAGUITO, order Wednesday') && copied.includes('https://super.lider.cl/'))
+t('Copy list carries the custom budget and Already have', copied.includes('(budget 120k)') && copied.includes('Already have: Mantequilla') && copied.includes('Half a jar of hummus'))
 
-await page.reload(); await page.waitForSelector('#s-send:not([hidden]), #s-home:not([hidden])')
-t('reload keeps session and lands on saved step', (await page.textContent('#title')) === 'Send')
+// Cart totals: upload screenshots of the Lider confirmation, Gemini (mocked) reads them, the sheet is prefilled
+const png = { name: 'lider.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64') }
+t('Lider header offers Upload screenshots, Take photo and Type total', (await page.$$('[data-scan="lider"]')).length === 1 && (await page.$$('[data-camera="lider"]')).length === 1 && (await page.$$('[data-type="lider"]')).length === 1)
+t('library input takes several files, camera input does not', await page.$eval('#receiptInput', i => i.multiple && !i.hasAttribute('capture')) && await page.$eval('#receiptCamera', i => i.getAttribute('capture') === 'environment'))
+await click('[data-scan="lider"]')
+await page.setInputFiles('#receiptInput', [png, { ...png, name: 'lider-2.png' }])
+await page.waitForSelector('#rcForm')
+t('receipt route got both screenshots and the plan lines', db.receipts === 1 && db.receiptBody.store === 'lider' && db.receiptBody.images === 2 && db.receiptBody.lines.includes('Huevos Ovofoods mediano, 30 un'))
+const liderLines = db.receiptBody.lines.length, liderTotal = 6990 + (liderLines - 1) * 1000 + 12990 + 7490
+t('sheet prefilled with the read total', (await page.inputValue('#rcIn')) === liderTotal.toLocaleString('es-CL'))
+const sheetTxt = await page.textContent('#sheetOpts')
+t('sheet reports pages, matches and extras', sheetTxt.includes('your 2 screenshots') && sheetTxt.includes(`${liderLines} of ${liderLines} plan lines found`) && sheetTxt.includes('2 outside the plan · $20.480') && sheetTxt.includes('PANALES HUGGIES'))
+t('tick-as-ordered offered because Lider is not ordered yet', await page.isChecked('#rcTick'))
+await click('#rcSave'); await page.waitForTimeout(900)
+t('cart total saved with plan subtotal, outside-plan sum and extras', db.state.actuals && db.state.actuals.lider && db.state.actuals.lider.total === liderTotal && db.state.actuals.lider.outside === 20480 && db.state.actuals.lider.source === 'scan' && db.state.actuals.lider.extras.length === 2 && db.state.actuals.lider.plan > 0)
+t('matched lines ticked as ordered', db.state.bought['Huevos Ovofoods mediano, 30 un'] === true && (await page.textContent('#storeLists')).includes('Ordered'))
+const liderBlock = await page.textContent('#storeLists')
+t('store header shows Plan, Cart and Outside plan', liderBlock.includes('Plan') && liderBlock.includes('Cart') && liderBlock.includes('Outside plan') && liderBlock.includes('$20.480') && liderBlock.includes('Read from the Lider confirmation'))
+// an unreadable receipt falls back to typing
+await click('[data-scan="je"]'); await page.setInputFiles('#receiptInput', png); await page.waitForSelector('#rcForm')
+t('unreadable receipt asks for the total', (await page.textContent('#sheetOpts')).includes("Couldn't read a total") && (await page.inputValue('#rcIn')) === '')
+await page.fill('#rcIn', '9500'); await click('#rcSave'); await page.waitForTimeout(900)
+t('typed total saved without items', db.state.actuals.je.total === 9500 && db.state.actuals.je.source === 'typed' && db.state.actuals.je.outside === null)
+// household budget + month card
+await click('[data-nav="home"]'); await page.waitForSelector('#s-home:not([hidden])')
+await click('#monthCard [data-budget]'); await page.waitForSelector('#houseIn')
+await page.fill('#houseIn', '800000'); await click('#budgetSave'); await page.waitForTimeout(600)
+t('household budget saved alongside the weekly one', db.settings.household && db.settings.household.month === 800000 && db.settings.budget && db.settings.budget.max === 120000)
+const month = await page.textContent('#monthCard')
+t('month card: November, week 1 of 5, both orders, October week left out', month.includes('November · week 1 of 5') && month.includes('2 orders logged') && month.includes((liderTotal + 9500).toLocaleString('es-CL')) && !month.includes('112.400'))
+t('month card: outside-plan uses receipt items where read, cart minus plan otherwise', month.includes((20480 + Math.max(0, 9500 - 6902)).toLocaleString('es-CL')))
+t('month card shows what is left of 800k', month.includes('800.000') && month.includes((800000 - liderTotal - 9500).toLocaleString('es-CL') + ' left'))
+await click('#resetBtn'); await page.waitForTimeout(900)
+t('Reset week keeps the cart totals', db.state.actuals && db.state.actuals.lider && db.state.actuals.lider.total === liderTotal && !db.state.sent)
+await click('[data-nav="list"]'); await page.waitForSelector('#s-list:not([hidden])')
+await click('[data-type="lider"]'); await page.waitForSelector('#rcClear'); await click('#rcClear'); await page.waitForTimeout(900)
+t('Remove total clears the Lider cart total', !db.state.actuals.lider && (await page.textContent('#storeLists')).includes('Upload screenshots'))
 
 // Date awareness: the same plan, viewed on other days
-await page.goto('http://127.0.0.1:4310/cook?today=2026-11-01'); await page.waitForSelector('#s-send:not([hidden]), #s-home:not([hidden])')
+await page.goto('http://127.0.0.1:4310/cook?today=2026-11-01'); await page.waitForSelector('#s-list:not([hidden]), #s-cook:not([hidden]), #s-home:not([hidden])')
 await click('[data-nav="home"]'); await page.waitForSelector('#s-home:not([hidden])')
 t('Sunday with no order placed: home says so', (await page.textContent('#weekLead')).includes("hasn't gone in"))
 await click('[data-nav="list"]'); await page.waitForSelector('#s-list:not([hidden])')
 t('Lider header flips to late', (await page.textContent('#storeLists')).includes('Lider · was Saturday') && (await page.textContent('#storeLists')).includes('1 day late'))
 await click('[data-nav="cook"]'); await page.waitForSelector('#s-cook:not([hidden])')
 t('cook screen waits for groceries', (await page.textContent('#cookTitle')).includes('once the groceries land') && (await page.textContent('#cookWhen')).includes('Sun 1 Nov'))
-await click('[data-go="send"]'); await page.waitForSelector('#s-send:not([hidden])')
-t('message says order today, was Saturday', (await page.textContent('#preview')).includes('LIDER, order today (was Saturday)'))
 await click('[data-nav="list"]'); await page.waitForSelector('#s-list:not([hidden])')
+await page.evaluate(() => { window.__copied = ''; navigator.clipboard.writeText = t => { window.__copied = t; return Promise.resolve() } })
+await click('#copyBtn'); await page.waitForTimeout(200)
+t('copied list says order today, was Saturday', (await page.evaluate(() => window.__copied)).includes('LIDER, order today (was Saturday)'))
 await click('[data-mark="lider"]'); await page.waitForTimeout(900)
 t('Mark ordered ticks every Lider line and saves', (await page.textContent('#storeLists')).includes('Ordered') && Object.values(db.state.bought).filter(Boolean).length >= 10)
 await click('[data-nav="home"]'); await page.waitForSelector('#s-home:not([hidden])')
 t('Sunday with groceries in: time to cook', (await page.textContent('#weekLead')).includes('time to batch cook'))
-await page.goto('http://127.0.0.1:4310/cook?today=2026-11-03'); await page.waitForSelector('#s-send:not([hidden]), #s-home:not([hidden])')
+await page.goto('http://127.0.0.1:4310/cook?today=2026-11-03'); await page.waitForSelector('#s-list:not([hidden]), #s-cook:not([hidden]), #s-home:not([hidden])')
 await click('[data-nav="home"]'); await page.waitForSelector('#s-home:not([hidden])')
 t('mid-week home shows day of week and tonight\'s dinner', /Tuesday, day 2 of 7\. Tonight: /.test(await page.textContent('#weekLead')))
 await click('[data-nav="menu"]'); await page.waitForSelector('#s-menu:not([hidden])')
@@ -225,7 +271,7 @@ t('Lider stays Ordered mid-week, Aquality is due today', (await page.textContent
 // Price refresh: button, stamp, product link, and the auto-run when an order is due.
 // The late-Sunday block above already triggered one automatic check (Lider overdue, no stamp yet).
 t('overdue order triggered one automatic price check', db.priceCalls === 1)
-await page.goto('http://127.0.0.1:4310/cook?today=2026-10-29'); await page.waitForSelector('#s-send:not([hidden]), #s-home:not([hidden])')
+await page.goto('http://127.0.0.1:4310/cook?today=2026-10-29'); await page.waitForSelector('#s-list:not([hidden]), #s-cook:not([hidden]), #s-home:not([hidden])')
 await click('[data-nav="list"]'); await page.waitForSelector('#s-list:not([hidden])'); await page.waitForTimeout(400)
 t('no automatic check when nothing is due', db.priceCalls === 1 && (await page.textContent('#priceStamp')).includes('Prices checked Sat 31 Oct'))
 t('line shows new price, promo and was-price', (await page.textContent('#storeLists')).includes('$6.990') && (await page.textContent('#storeLists')).includes('Rebaja') && (await page.textContent('#storeLists')).includes('was $7.190'))
@@ -233,14 +279,14 @@ t('line links to the product page once known', (await page.$$eval('#storeLists a
 await click('#refreshBtn'); await page.waitForFunction(() => !document.querySelector('#refreshBtn').disabled)
 t('Refresh prices button calls the route', db.priceCalls === 2)
 t('snack reports the change', (await page.textContent('#snackTxt')).includes('1 price changed'))
-await page.goto('http://127.0.0.1:4310/cook?today=2026-11-01'); await page.waitForSelector('#s-send:not([hidden]), #s-home:not([hidden])'); await page.waitForTimeout(500)
+await page.goto('http://127.0.0.1:4310/cook?today=2026-11-01'); await page.waitForSelector('#s-list:not([hidden]), #s-cook:not([hidden]), #s-home:not([hidden])'); await page.waitForTimeout(500)
 t('automatic check runs once per app open', db.priceCalls === 2)
 await click('[data-nav="list"]'); await page.waitForSelector('#s-list:not([hidden])')
 t('stale stamp warns when an order is pending', (await page.textContent('#priceStamp')).includes('may have moved'))
-await page.evaluate(() => sessionStorage.clear()); await page.reload(); await page.waitForSelector('#s-list:not([hidden]), #s-send:not([hidden]), #s-home:not([hidden])')
+await page.evaluate(() => sessionStorage.clear()); await page.reload(); await page.waitForSelector('#s-list:not([hidden]), #s-cook:not([hidden]), #s-home:not([hidden])')
 await page.waitForFunction(() => !document.querySelector('#refreshBtn').disabled); await page.waitForTimeout(200)
 t('next app open with a pending order checks again', db.priceCalls === 3)
-await page.goto('http://127.0.0.1:4310/cook'); await page.waitForSelector('#s-send:not([hidden]), #s-home:not([hidden])')
+await page.goto('http://127.0.0.1:4310/cook'); await page.waitForSelector('#s-list:not([hidden]), #s-cook:not([hidden]), #s-home:not([hidden])')
 await click('#outBtn'); await page.waitForSelector('#s-login:not([hidden])')
 t('sign out returns to login', !(await page.evaluate(() => localStorage.getItem('cook_sess'))))
 
