@@ -177,6 +177,7 @@ h3{font-size:14px;font-weight:500;margin:0}
 .meal .mm{font-size:12px;color:var(--on-surface-variant);font-variant-numeric:tabular-nums}
 .meal .mm b{font-weight:500;color:var(--on-surface)}
 
+@keyframes pulse{from{opacity:.4}to{opacity:1}}
 /* Linear budget */
 .bar{height:8px;border-radius:4px;background:var(--surface-container-highest);overflow:hidden}
 .bar i{display:block;height:100%;background:var(--primary);border-radius:4px;transition:width .3s}
@@ -292,12 +293,13 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12p
     <section class="screen" id="s-deals" hidden>
       <div><h2>This week's deals</h2><p class="muted" style="margin:4px 0 0">LATAM Pass benefits first, then Lider, then Jumbo. Anything you keep on gets priority in the menu.</p></div>
       <div id="dealGroups" style="display:flex;flex-direction:column;gap:16px"></div>
-      <div class="row between"><button class="btn text" data-go="pantry">Back</button><button class="btn filled" data-go="menu">Build menu<span class="ms">arrow_forward</span></button></div>
+      <div class="row between"><button class="btn text" data-go="pantry">Back</button><button class="btn filled" data-build id="buildBtn">Build menu<span class="ms">auto_awesome</span></button></div>
     </section>
 
     <section class="screen" id="s-menu" hidden>
       <div class="card outl">
         <div class="row between"><h2>7-day menu</h2><span class="badge ok" id="menuOk">On target</span></div>
+        <div id="buildRow" hidden style="display:flex;flex-direction:column;gap:8px"></div>
         <div class="row between num"><span class="muted">Kara / day</span><span class="price" id="avgK"></span></div>
         <div class="row between num"><span class="muted">Tomas / day</span><span class="price" id="avgT"></span></div>
         <p class="muted" style="margin:0">Tap the swap icon on any meal to see alternatives that reuse the same base ingredients.</p>
@@ -377,7 +379,7 @@ const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'
 const STEPS=[
  {id:'pantry',t:'Pantry check',s:'Toggle what you still have',ic:'kitchen'},
  {id:'deals',t:'Deals',s:'LATAM Pass, Lider, then Jumbo',ic:'sell'},
- {id:'menu',t:'7-day menu',s:'Approve or swap meals',ic:'restaurant'},
+ {id:'menu',t:'7-day menu',s:'Built around what you have; swap any meal',ic:'restaurant'},
  {id:'list',t:'Grocery list',s:'Priced, minus pantry, vs budget',ic:'shopping_cart'},
  {id:'cook',t:'Cook plan',s:'Sunday timeline + Wednesday backup',ic:'skillet'},
  {id:'send',t:'Send',s:'Links to the exact products',ic:'send'}];
@@ -458,13 +460,14 @@ window.addEventListener('pagehide',()=>{if(Object.keys(dirty).length&&weekId&&se
 function freshState(){
   const pantry={};W.pantry.forEach(p=>pantry[p.k]=!!p.on);
   const deals={};W.deals.forEach(g=>g.items.forEach((d,i)=>deals[g.key+':'+i]=!!d.on));
-  return{pantry,extraPantry:[],deals,menu:JSON.parse(JSON.stringify(W.menu)),bought:{},sent:false,step:'home'};
+  return{pantry,extraPantry:[],deals,menu:JSON.parse(JSON.stringify(W.menu)),bought:{},sent:false,step:'home',build:null};
 }
 function normalise(st){
   const f=freshState();const s=Object.assign({},f,st||{});
   s.pantry=Object.assign({},f.pantry,s.pantry||{});s.deals=Object.assign({},f.deals,s.deals||{});
   if(!Array.isArray(s.menu)||s.menu.length!==7)s.menu=f.menu;
   if(!Array.isArray(s.extraPantry))s.extraPantry=[];if(!s.bought||typeof s.bought!=='object')s.bought={};
+  if(!s.build||typeof s.build!=='object'||!Array.isArray(s.build.skip))s.build=null;else if(!Array.isArray(s.build.adjust))s.build.adjust=[];
   return s;
 }
 async function loadWeek(){
@@ -525,6 +528,7 @@ function renderMenu(){
   $('#avgK').textContent=`${Math.round(sk/7)} g protein · ${Math.round(skc/7).toLocaleString('es-CL')} kcal from meals`;
   $('#avgT').textContent=`${Math.round(st/7)} g protein · ${Math.round(stc/7).toLocaleString('es-CL')} kcal`;
   const ok=sk/7>=W.targets.kMin&&st/7>=W.targets.tMin;$('#menuOk').textContent=ok?'On target':'Below target';$('#menuOk').className='badge '+(ok?'ok':'warn');
+  renderBuildRow();
   document.querySelectorAll('[data-swap]').forEach(b=>b.onclick=e=>{e.preventDefault();openSwap(b.dataset.swap);});
   document.querySelectorAll('[data-rate]').forEach(b=>b.onclick=async()=>{const [d,slot,v]=b.dataset.rate.split(':');const meal=W.meals[slot][S.menu[+d][slot]][0];
     ratings=ratings.filter(x=>!(x.day===+d&&x.slot===slot&&x.user_id===me)).concat([{day:+d,slot,meal,rating:+v,user_id:me}]);renderMenu();
@@ -569,7 +573,8 @@ async function saveBudget(n){
   }catch(e){err.textContent=e.message;err.hidden=false;}
   finally{btn.disabled=false;}
 }
-const included=it=>!(it.pk&&S.pantry[it.pk]);
+const included=it=>!(it.pk&&S.pantry[it.pk])&&!(S.build&&S.build.skip.includes(it.t));
+const lineOf=it=>{const a=S.build&&S.build.adjust.find(x=>x.t===it.t);return a?{q:a.q||it.q||'',p:a.p,adj:true}:{q:it.q||'',p:it.p,adj:false};};
 const allItems=()=>W.stores.flatMap(s=>W.groceries[s.key]||[]);
 
 /* ---------- Dates: the plan is relative to the week it serves ----------
@@ -618,9 +623,9 @@ function weekPhase(){
 }
 function markStore(key,on){(W.groceries[key]||[]).filter(included).forEach(it=>S.bought[it.t]=!!on);persist(['bought']);renderAll();snack(on?'Marked as ordered':'Order reopened');}
 function renderList(){
-  const row=it=>`<div class="li ${S.bought[it.t]?'done':''}"><span class="cb ${S.bought[it.t]?'on':''}" role="checkbox" aria-checked="${!!S.bought[it.t]}" tabindex="0" data-buy="${esc(it.t)}"><span class="ms">check</span></span><div class="grow"><div class="t"><a href="${esc(it.pUrl||it.url)}" target="_blank" rel="noopener">${esc(it.t)}</a></div><div class="s">${esc(it.q||'')}${it.deal?` · <span class="badge deal">${esc(it.promo||'Deal')}</span>`:''}${it.est?' · <span class="badge est">estimate</span>':''}${it.prev?` · <span class="muted">was ${clp(it.prev)}</span>`:''}</div></div><span class="price">${clp(it.p)}</span></div>`;
+  const row=it=>{const L=lineOf(it);return`<div class="li ${S.bought[it.t]?'done':''}"><span class="cb ${S.bought[it.t]?'on':''}" role="checkbox" aria-checked="${!!S.bought[it.t]}" tabindex="0" data-buy="${esc(it.t)}"><span class="ms">check</span></span><div class="grow"><div class="t"><a href="${esc(it.pUrl||it.url)}" target="_blank" rel="noopener">${esc(it.t)}</a></div><div class="s">${esc(L.q)}${L.adj?' · <span class="badge est">trimmed</span>':''}${it.deal?` · <span class="badge deal">${esc(it.promo||'Deal')}</span>`:''}${it.est?' · <span class="badge est">estimate</span>':''}${it.prev?` · <span class="muted">was ${clp(it.prev)}</span>`:''}</div></div><span class="price">${clp(L.p)}</span></div>`;};
   let tot=0;
-  $('#storeLists').innerHTML=W.stores.map(s=>{const items=(W.groceries[s.key]||[]).filter(included);const sub=items.reduce((a,b)=>a+b.p,0);tot+=sub;if(!items.length)return'';
+  $('#storeLists').innerHTML=W.stores.map(s=>{const items=(W.groceries[s.key]||[]).filter(included);const sub=items.reduce((a,b)=>a+lineOf(b).p,0);tot+=sub;if(!items.length)return'';
     const st=storeStatus(s);
     return`<div style="display:flex;flex-direction:column;gap:8px"><div class="row" style="gap:8px;flex-wrap:wrap"><span class="eyebrow">${esc(s.label)} · ${esc(st.when)}</span>${st.badge?`<span class="badge ${st.cls}">${esc(st.badge)}</span>`:s.badge?`<span class="badge deal">${esc(s.badge)}</span>`:s.sub?`<span class="muted">${esc(s.sub)}</span>`:''}<span class="price grow" style="text-align:right">${clp(sub)}</span></div><div class="list">${items.map(row).join('')}</div><div class="row" style="gap:8px;flex-wrap:wrap">${s.note?`<p class="muted grow" style="margin:0">${esc(s.note)}</p>`:'<span class="grow"></span>'}<button class="btn text" data-mark="${esc(s.key)}" data-on="${st.kind==='done'?0:1}">${st.kind==='done'?'Reopen order':'Mark ordered'}</button></div></div>`;}).join('');
   const have=allItems().filter(it=>!included(it));
@@ -677,14 +682,46 @@ function renderCook(){
   $('#storage').innerHTML=(c.storage||[]).map(s=>`<div class="li"><span class="lead-ic"><span class="ms">${esc(s.ic||'inventory_2')}</span></span><div class="grow"><div class="t">${esc(s.t)}</div><div class="s">${esc(s.s)}</div></div></div>`).join('');
 }
 function messageText(){
-  const tot=allItems().filter(included).reduce((a,b)=>a+b.p,0);
+  const tot=allItems().filter(included).reduce((a,b)=>a+lineOf(b).p,0);
   const groups=W.stores.map(s=>{const items=(W.groceries[s.key]||[]).filter(included);if(!items.length)return'';
     const st=storeStatus(s);const when=st.kind==='done'?'ordered':st.kind==='late'?`order today (was ${s.day})`:st.kind==='today'?'order today':`order ${s.day}`;
-    return`${s.label.toUpperCase()}, ${when}${s.badge?' ('+s.badge+')':''}\n`+items.map(it=>`• ${it.t} · ${it.q}  ${clp(it.p)}\n  ${it.url}`).join('\n');}).filter(Boolean).join('\n\n');
-  const have=allItems().filter(it=>!included(it)).map(i=>i.t.split(' ')[0]);
+    return`${s.label.toUpperCase()}, ${when}${s.badge?' ('+s.badge+')':''}\n`+items.map(it=>{const L=lineOf(it);return`• ${it.t} · ${L.q}  ${clp(L.p)}\n  ${it.url}`;}).join('\n');}).filter(Boolean).join('\n\n');
+  const have=allItems().filter(it=>!included(it)).map(i=>i.t.split(' ')[0]).concat(S.extraPantry);
   return`Groceries, ${W.week.label} · ${clp(tot)} (budget ${kk(budget().max)})\n\n${groups}\n\nAlready have: ${have.join(', ')||'nothing'}\n\nCook plan: ${location.origin}/#cook`;
 }
 function renderSend(){$('#preview').textContent=messageText();}
+
+/* ---------- Build menu: Gemini re-plans from pantry, deals, budget and ratings ---------- */
+let building=false,buildErr='';
+function buildHash(){
+  const on=Object.keys(S.pantry).filter(k=>S.pantry[k]).sort(),dl=Object.keys(S.deals).filter(k=>S.deals[k]).sort();
+  const rt=ratings.map(r=>`${r.day}${r.slot}${r.rating}`).sort();
+  const str=[on.join(','),S.extraPantry.map(x=>x.toLowerCase()).sort().join('|'),dl.join(','),budget().max,rt.join(',')].join('#');
+  let h=5381;for(let i=0;i<str.length;i++)h=((h<<5)+h+str.charCodeAt(i))|0;return (h>>>0).toString(36);
+}
+function buildStale(){return !S.build||S.build.hash!==buildHash();}
+function renderBuildRow(){
+  const r=$('#buildRow');
+  if(building){r.hidden=false;r.innerHTML=`<div class="row" style="gap:8px"><span class="ms" style="color:var(--primary)">auto_awesome</span><span class="muted">Building your menu from what you have, the deals you kept and your budget…</span></div><div class="bar"><i style="width:40%;animation:pulse 1.2s ease-in-out infinite alternate"></i></div>`;return;}
+  if(buildErr){r.hidden=false;r.innerHTML=`<p class="muted" style="margin:0;color:var(--error)">${esc(buildErr)}</p><div class="row"><button class="btn tonal" data-build>Try again</button></div>`;return;}
+  if(S.build){r.hidden=false;r.innerHTML=`<p class="muted" style="margin:0">${esc(S.build.note||'Built for what you have.')}${buildStale()?' <b style="color:var(--on-surface)">Your pantry or deals changed since.</b>':''}</p><div class="row"><button class="btn text" data-build style="padding:0">${buildStale()?'Rebuild menu':'Rebuild anyway'}</button></div>`;return;}
+  r.hidden=false;r.innerHTML=`<p class="muted" style="margin:0">This is the plan as written. Build it around what you have.</p><div class="row"><button class="btn text" data-build style="padding:0">Build menu</button></div>`;
+}
+async function buildMenu(force){
+  if(building)return;
+  if(!force&&!buildStale()){go('menu');return;}
+  building=true;buildErr='';go('menu');renderBuildRow();
+  clearTimeout(saveT);await flush();
+  try{
+    const r=await authFetch('/api/build',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({weekId,pantry:S.pantry,extraPantry:S.extraPantry,deals:S.deals,hash:buildHash()})});
+    if(r.status===401){signOut();return;}
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(j.error||'could not build the menu');
+    if(Array.isArray(j.menu)&&j.menu.length===7)S.menu=j.menu;
+    S.build=j.build&&typeof j.build==='object'?j.build:null;if(S.build&&!Array.isArray(S.build.skip))S.build.skip=[];if(S.build&&!Array.isArray(S.build.adjust))S.build.adjust=[];
+    building=false;renderAll();snack('Menu rebuilt');
+  }catch(e){building=false;buildErr=e.message;renderBuildRow();}
+}
 
 /* ---------- Navigation ---------- */
 function go(id){
@@ -698,11 +735,13 @@ function go(id){
   $('#body').scrollTop=0;
   if(id!=='home'&&S.step!==id){S.step=id;persist(['step']);}
   if(location.hash.slice(1)!==id)history.replaceState(null,'','#'+id);
+  if(id==='menu')renderMenu();   // the build row depends on pantry/deals edited elsewhere
   renderHome();
 }
 document.addEventListener('click',e=>{
   if(!W)return;
   if(e.target.closest('[data-budget]')){openBudget();return;}
+  const bb=e.target.closest('[data-build]');if(bb){buildMenu(bb.id!=='buildBtn');return;}
   const g=e.target.closest('[data-go]');if(g){go(g.dataset.go);return;}
   const n=e.target.closest('[data-nav]');if(n){go(n.dataset.nav);return;}
 });

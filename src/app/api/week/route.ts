@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic'
 
 type WeekRow = { week_id: string; label: string; plan: unknown; state: Record<string, unknown>; is_current: boolean; updated_at: string }
 
-const STATE_KEYS = new Set(['pantry', 'extraPantry', 'deals', 'menu', 'bought', 'sent', 'step'])
+const STATE_KEYS = new Set(['pantry', 'extraPantry', 'deals', 'menu', 'bought', 'sent', 'step', 'build'])
 const MAX_STATE_BYTES = 64 * 1024
 
 async function currentWeek(): Promise<WeekRow | null> {

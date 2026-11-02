@@ -6,7 +6,7 @@ import { chromium } from '/opt/npm-tools/node_modules/playwright/index.mjs'
 
 const html = await readFile(new URL('../public/cook/index.html', import.meta.url), 'utf8')
 const seed = JSON.parse(await readFile(new URL('../src/data/seed-week.json', import.meta.url), 'utf8'))
-const db = { state: {}, ratings: [], patches: 0, settings: {} }
+const db = { state: {}, ratings: [], patches: 0, settings: {}, builds: 0, buildBody: null }
 const TOKEN = 'tok-abc'
 
 const server = http.createServer(async (req, res) => {
@@ -39,6 +39,10 @@ const server = http.createServer(async (req, res) => {
     plan.week.pricesCheckedAt = '2026-10-31T15:00:00.000Z'; plan.week.pricesChecked = 'Prices re-checked (mock)'; db.plan = plan
     return json(200, { plan, checked: 17, matched: 16, changed: [{ t: l.t, from: before, to: 6990 }] })
   }
+  if (url.pathname === '/api/build' && req.method === 'POST') { const b = JSON.parse(body); db.builds++; db.buildBody = b
+    const menu = JSON.parse(JSON.stringify(db.state.menu || seed.menu)); menu[0].d = 3
+    const build = { skip: ['Brócoli congelado 500 g'], adjust: [{ t: 'Huevos Ovofoods mediano, 30 un', q: '1, you have some', p: 3600 }], note: 'Monday dinner is now lentejas to use the lentils; dropped the broccoli you already have.', hash: b.hash, at: new Date().toISOString() }
+    Object.assign(db.state, { menu, build }); return json(200, { menu, build }) }
   if (url.pathname === '/api/rate' && req.method === 'POST') { db.ratings.push(JSON.parse(body)); return json(200, { ok: true }) }
   json(404, { error: 'nope' })
 })
@@ -98,8 +102,24 @@ t('deals: LATAM Pass first, then Lider, then Jumbo', groups[0].includes('LATAM')
 await click('input[data-deal="lider:3"]'); await page.waitForTimeout(900)
 t('deal toggle saved', db.state.deals && db.state.deals['lider:3'] === true)
 
-await click('[data-go="menu"]'); await page.waitForSelector('#s-menu:not([hidden])')
+// Build menu: the button rebuilds through /api/build, then only rebuilds again when inputs change
+await click('#buildBtn'); await page.waitForSelector('#s-menu:not([hidden])')
+await page.waitForFunction(() => /lentejas/.test(document.querySelector('#buildRow').textContent))
+t('Build menu calls the planner once with pantry, free text and deals', db.builds === 1 && db.buildBody.pantry && db.buildBody.extraPantry.length === 2 && db.buildBody.deals['lider:3'] === true && typeof db.buildBody.hash === 'string')
+t('menu card shows what changed', (await page.textContent('#buildRow')).includes('dropped the broccoli'))
+t('rebuilt menu applied (Monday dinner now lentejas)', (await page.textContent('#days details:first-child')).includes('Lentejas'))
 t('seven days rendered', (await page.$$('#days details')).length === 7)
+await click('[data-go="deals"]'); await page.waitForSelector('#s-deals:not([hidden])')
+await click('#buildBtn'); await page.waitForSelector('#s-menu:not([hidden])'); await page.waitForTimeout(300)
+t('Build menu with nothing changed does not call the planner again', db.builds === 1)
+await click('[data-nav="home"]'); await page.waitForSelector('#s-home:not([hidden])'); await click('#homeSteps [data-go="pantry"]'); await page.waitForSelector('#s-pantry:not([hidden])')
+await click('input[data-pk="pb"]'); await page.waitForTimeout(300)
+await click('[data-nav="menu"]'); await page.waitForSelector('#s-menu:not([hidden])')
+t('pantry change marks the build stale', (await page.textContent('#buildRow')).includes('changed since') && (await page.textContent('#buildRow')).includes('Rebuild menu'))
+await click('[data-nav="home"]'); await page.waitForSelector('#s-home:not([hidden])'); await click('#homeSteps [data-go="pantry"]'); await page.waitForSelector('#s-pantry:not([hidden])')
+await click('input[data-pk="pb"]'); await page.waitForTimeout(900)
+await click('[data-nav="menu"]'); await page.waitForSelector('#s-menu:not([hidden])')
+t('undoing the change makes it fresh again', !(await page.textContent('#buildRow')).includes('changed since'))
 t('menu on target badge', (await page.textContent('#menuOk')) === 'On target')
 await click('[data-swap="0:d"]'); await page.waitForSelector('#sheet:not([hidden])')
 t('swap sheet lists dinner pool', (await page.$$('#sheetOpts .opt')).length === seed.meals.d.length)
@@ -115,6 +135,8 @@ const storeHeads = await page.$$eval('#storeLists .eyebrow', els => els.map(e =>
 t('store orders with days (Jumbo hidden: its only item is in the freezer)', storeHeads.length === 3 && storeHeads.some(h => h.includes('Aquality · Tuesday, in 3 days')) && storeHeads.some(h => h.includes('Juan Esparraguito · Wednesday, in 4 days')))
 t('Lider order is due today on the planning Saturday', storeHeads.some(h => h.includes('Lider · Saturday')) && (await page.textContent('#storeLists')).includes('Order today'))
 t('eggs now on the list (pantry off)', (await page.textContent('#storeLists')).includes('Huevos'))
+t('planner-skipped broccoli moved to Already have', !(await page.textContent('#storeLists')).includes('Brócoli') && (await page.textContent('#haveList')).includes('Brócoli'))
+t('planner-trimmed eggs line shows new quantity and price', (await page.textContent('#storeLists')).includes('you have some') && (await page.textContent('#storeLists')).includes('3.600') && (await page.textContent('#storeLists')).includes('trimmed'))
 t('peanut butter under Already have', (await page.textContent('#haveList')).includes('Mantequilla'))
 const links = await page.$$eval('#storeLists a', as => as.map(a => a.href))
 t('every grocery line has a store link', links.length > 0 && links.every(h => /^https:\/\/(super\.lider\.cl|www\.jumbo\.cl|www\.aqualitysoluciones\.cl|juanesparraguito\.com)/.test(h)))
@@ -125,12 +147,12 @@ await click('#budgetOf'); await page.waitForSelector('#budgetForm')
 t('budget sheet opens with the current number', (await page.inputValue('#budgetIn')) === '130.000')
 await page.fill('#budgetIn', '1000'); await click('#budgetSave'); await page.waitForSelector('#budgetErr:not([hidden])')
 t('too-small budget rejected client-side', (await page.textContent('#budgetErr')).includes('20.000'))
-await page.fill('#budgetIn', '85000'); await click('#budgetSave'); await page.waitForTimeout(600)
-t('budget saved to server', db.settings.budget && db.settings.budget.max === 85000)
-t('list card uses the new budget', (await page.textContent('#budgetOf')).includes('85.000'))
+await page.fill('#budgetIn', '80000'); await click('#budgetSave'); await page.waitForTimeout(600)
+t('budget saved to server', db.settings.budget && db.settings.budget.max === 80000)
+t('list card uses the new budget', (await page.textContent('#budgetOf')).includes('80.000'))
 t('over budget now flagged', (await page.textContent('#budgetBadge')) === 'Over budget')
 await click('[data-nav="home"]'); await page.waitForSelector('#s-home:not([hidden])')
-t('home badge shows your budget', (await page.textContent('#budgetBtn')).includes('Budget 85k') && (await page.textContent('#budgetBtn')).includes('yours'))
+t('home badge shows your budget', (await page.textContent('#budgetBtn')).includes('Budget 80k') && (await page.textContent('#budgetBtn')).includes('yours'))
 await click('#budgetBtn'); await page.waitForSelector('#budgetDefault')
 await click('#budgetDefault'); await page.waitForTimeout(600)
 t('plan default restored', !db.settings.budget && (await page.textContent('#budgetBtn')).includes('110k to 130k'))
@@ -153,7 +175,7 @@ const preview = await page.textContent('#preview')
 t('preview groups by store with order day', preview.includes('AQUALITY, order Tuesday') && preview.includes('JUAN ESPARRAGUITO, order Wednesday'))
 t('preview includes product links', preview.includes('https://super.lider.cl/'))
 t('preview carries the custom budget', preview.includes('(budget 120k)'))
-t('preview lists Already have', preview.includes('Already have: Mantequilla'))
+t('preview lists Already have incl. free-text pantry', preview.includes('Already have: Mantequilla') && preview.includes('Half a jar of hummus'))
 await click('#sendBtn'); await page.waitForTimeout(300)
 t('WhatsApp without number asks for it', (await page.textContent('#snackTxt')).includes('number'))
 await click('[data-ch="copy"]'); await click('#sendBtn'); await page.waitForTimeout(900)
