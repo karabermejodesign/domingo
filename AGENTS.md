@@ -12,7 +12,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 Sunday Prep: the weekly meal-plan app for Kara and Tomas. Built the Wild Ordinary way (see the build-app skill).
 
-- Surface: one self-contained SPA at `public/cook/index.html`, served at `/cook`. Absolute asset paths only (`/cook/img/...`).
+- Surface: one self-contained SPA at `public/cook/index.html`, served at `/` (rewrite; `/cook` redirects to `/`). Absolute asset paths only (`/cook/img/...`).
 - Every server route calls `requireUser` at the top of the handler and sets `maxDuration`.
 - Data is in Supabase project `cook`, tables prefixed `cook_`, RLS on, no policies: the service-role key from API routes is the only access path. Never put a non-anon key in `public/`.
 - Never forward an upstream 401/403; map to 502. A 401 from our routes means exactly one thing: not signed in.

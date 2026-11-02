@@ -607,7 +607,7 @@ function messageText(){
     const st=storeStatus(s);const when=st.kind==='done'?'ordered':st.kind==='late'?`order today (was ${s.day})`:st.kind==='today'?'order today':`order ${s.day}`;
     return`${s.label.toUpperCase()}, ${when}${s.badge?' ('+s.badge+')':''}\n`+items.map(it=>`• ${it.t} · ${it.q}  ${clp(it.p)}\n  ${it.url}`).join('\n');}).filter(Boolean).join('\n\n');
   const have=allItems().filter(it=>!included(it)).map(i=>i.t.split(' ')[0]);
-  return`Groceries, ${W.week.label} · ${clp(tot)} (budget ${Math.round(W.week.budget/1000)}k)\n\n${groups}\n\nAlready have: ${have.join(', ')||'nothing'}\n\nCook plan: ${location.origin}/cook#cook`;
+  return`Groceries, ${W.week.label} · ${clp(tot)} (budget ${Math.round(W.week.budget/1000)}k)\n\n${groups}\n\nAlready have: ${have.join(', ')||'nothing'}\n\nCook plan: ${location.origin}/#cook`;
 }
 function renderSend(){$('#preview').textContent=messageText();}
 

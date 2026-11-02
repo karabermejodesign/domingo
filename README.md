@@ -1,6 +1,6 @@
 # cook (Sunday Prep)
 
-Weekly meal-plan app for Kara and Tomas. Next.js App Router on Vercel, Supabase project `cook`, surface at `/cook`.
+Weekly meal-plan app for Kara and Tomas. Next.js App Router on Vercel, Supabase project `cook`, surface served at `/` from `public/cook/index.html`.
 
 - `public/cook/index.html` — the app, one file (Material 3, green seed). Signs in against Supabase GoTrue with the anon key and talks to `/api/*` with the bearer token.
 - `src/app/api/week` — GET the current week (seeds `src/data/seed-week.json` on first run), PATCH per-week state.
